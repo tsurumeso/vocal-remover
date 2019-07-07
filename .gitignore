@@ -2,4 +2,5 @@
 *.pyc
 *.png
 *.wav
+*.mp3
 .vscode/

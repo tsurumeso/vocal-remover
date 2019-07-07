@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime as dt
 import gc
 import os
 import random
@@ -18,12 +19,13 @@ p.add_argument('--seed', '-s', type=int, default=2019)
 p.add_argument('--mixture_dataset', '-m', required=True)
 p.add_argument('--instrumental_dataset', '-i', required=True)
 p.add_argument('--learning_rate', type=float, default=0.001)
-p.add_argument('--lr_min', type=float, default=0.00001)
+p.add_argument('--lr_min', type=float, default=0.0001)
 p.add_argument('--lr_decay', type=float, default=0.9)
-p.add_argument('--lr_decay_interval', type=int, default=5)
+p.add_argument('--lr_decay_interval', type=int, default=6)
 p.add_argument('--batchsize', '-B', type=int, default=32)
 p.add_argument('--val_batchsize', '-b', type=int, default=32)
 p.add_argument('--cropsize', '-c', type=int, default=512)
+p.add_argument('--patches', '-p', type=int, default=16)
 p.add_argument('--epoch', '-E', type=int, default=50)
 p.add_argument('--inner_epoch', '-e', type=int, default=4)
 p.add_argument('--mixup', '-M', action='store_true')
@@ -36,9 +38,10 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     if chainer.backends.cuda.available:
         chainer.backends.cuda.cupy.random.seed(args.seed)
+        chainer.backends.cuda.set_max_workspace_size(512 * 1024 * 1024)
     chainer.global_config.autotune = True
 
-    model = unet.SpecUNet()
+    model = unet.BandwiseUNet()
     if args.gpu >= 0:
         chainer.backends.cuda.check_cuda_available()
         chainer.backends.cuda.get_device(args.gpu).use()
@@ -46,7 +49,6 @@ if __name__ == '__main__':
 
     optimizer = chainer.optimizers.Adam(args.learning_rate)
     optimizer.setup(model)
-    # optimizer.add_hook(chainer.optimizer_hooks.WeightDecay(0.0001))
 
     input_exts = ['.wav', '.m4a', '.3gp', '.oma', '.mp3', '.mp4']
     X_list = sorted(
@@ -64,15 +66,20 @@ if __name__ == '__main__':
     random.shuffle(filelist)
     train_filelist = filelist[:-20]
     valid_filelist = filelist[-20:]
-    X_valid, y_valid = dataset.create_dataset(
-        valid_filelist, args.cropsize, validation=True)
 
+    for X_fname, y_fname in valid_filelist:
+        print(os.path.basename(X_fname), os.path.basename(y_fname))
+
+    X_valid, y_valid = dataset.create_dataset(
+        valid_filelist, args.cropsize, 64, validation=True)
+
+    log = []
     best_count = 0
     best_loss = np.inf
+    logname = dt.now().strftime('%Y%m%d%H%M%S.npy')
     for epoch in range(args.epoch):
-        random.shuffle(train_filelist)
         X_train, y_train = dataset.create_dataset(
-            train_filelist[:100], args.cropsize)
+            train_filelist, args.cropsize, args.patches)
         if args.mixup:
             X_train, y_train = dataset.mixup_generator(
                 X_train, y_train, args.mixup_alpha)
@@ -111,16 +118,16 @@ if __name__ == '__main__':
                     X_batch = spec_utils.crop_and_concat(mask, X_batch, False)
                     y_batch = spec_utils.crop_and_concat(mask, y_batch, False)
 
-                    inst_loss = F.mean_squared_error(X_batch * mask, y_batch)
-                    vocal_loss = F.mean_squared_error(
-                        X_batch * (1 - mask), X_batch - y_batch)
-                    loss = inst_loss + vocal_loss
+                    loss = F.mean_absolute_error(X_batch * mask, y_batch)
                     sum_loss += float(loss.data) * len(X_batch)
 
             valid_loss = sum_loss / len(X_valid)
             print('  * inner epoch {}'.format(inner_epoch))
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
-                  .format(train_loss * 100, valid_loss * 1000))
+                  .format(train_loss * 100, valid_loss * 100))
+
+            log.append([train_loss, valid_loss])
+            np.save(logname, np.asarray(log))
 
             if valid_loss < best_loss:
                 best_count = 0
@@ -128,7 +135,7 @@ if __name__ == '__main__':
                 print('    * best validation loss')
                 model_path = 'models/model_iter{}.npz'.format(epoch)
                 chainer.serializers.save_npz(model_path, model)
-            if best_count >= args.lr_decay_interval:
+            if epoch > 1 and best_count >= args.lr_decay_interval:
                 best_count = 0
                 optimizer.alpha *= args.lr_decay
                 if optimizer.alpha < args.lr_min:

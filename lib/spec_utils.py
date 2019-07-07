@@ -6,11 +6,11 @@ import numpy as np
 
 
 def crop_and_concat(h1, h2, concat=True):
-    s_freq = (h2.shape[2] - h1.shape[2]) // 2
-    e_freq = s_freq + h1.shape[2]
+    # s_freq = (h2.shape[2] - h1.shape[2]) // 2
+    # e_freq = s_freq + h1.shape[2]
     s_time = (h2.shape[3] - h1.shape[3]) // 2
     e_time = s_time + h1.shape[3]
-    h2 = h2[:, :, s_freq:e_freq, s_time:e_time]
+    h2 = h2[:, :, :, s_time:e_time]
     if concat:
         return F.concat([h1, h2])
     else:
@@ -27,15 +27,15 @@ def calc_spec(X, phase=False):
     mag = np.asarray([mag_left, mag_right])
 
     if phase:
-        phase_left = np.exp(1j * np.angle(spec_left))
-        phase_right = np.exp(1j * np.angle(spec_right))
+        phase_left = np.exp(1.j * np.angle(spec_left))
+        phase_right = np.exp(1.j * np.angle(spec_right))
         phase = np.asarray([phase_left, phase_right])
         return mag, phase
     else:
         return mag
 
 
-def cache_or_load(mix_path, inst_path):
+def cache_or_load(mix_path, inst_path, sr=32000):
     _, ext = os.path.splitext(mix_path)
     spec_mix_path = mix_path.replace(ext, '.npy')
     spec_inst_path = inst_path.replace(ext, '.npy')
@@ -44,13 +44,15 @@ def cache_or_load(mix_path, inst_path):
         X = np.load(spec_mix_path)
         y = np.load(spec_inst_path)
     else:
-        X, _ = librosa.load(mix_path, 44100, mono=False, dtype=np.float32)
-        y, _ = librosa.load(inst_path, 44100, mono=False, dtype=np.float32)
+        X, _ = librosa.load(
+            mix_path, sr, False, dtype=np.float32, res_type='kaiser_fast')
+        y, _ = librosa.load(
+            inst_path, sr, False, dtype=np.float32, res_type='kaiser_fast')
         X, _ = librosa.effects.trim(X)
         y, _ = librosa.effects.trim(y)
 
-        X_mono = X[:, :88200].sum(axis=0)
-        y_mono = y[:, :88200].sum(axis=0)
+        X_mono = X[:, :sr * 2].sum(axis=0)
+        y_mono = y[:, :sr * 2].sum(axis=0)
         X_mono -= X_mono.mean()
         y_mono -= y_mono.mean()
         offset = len(y_mono) - 1
@@ -67,7 +69,7 @@ def cache_or_load(mix_path, inst_path):
 
         # if 'mixture' in mix_path and delay != 0:
         #     print('\n', mix_path, delay)
-        #     librosa.output.write_wav('noisy.wav', X - y, 44100)
+        #     librosa.output.write_wav('noisy.wav', X - y, sr * 2)
         #     input()
 
         X = calc_spec(X)
