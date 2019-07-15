@@ -41,7 +41,7 @@ if __name__ == '__main__':
         chainer.backends.cuda.set_max_workspace_size(512 * 1024 * 1024)
     chainer.global_config.autotune = True
 
-    model = unet.BandwiseUNet()
+    model = unet.MultiBandUNet()
     if args.gpu >= 0:
         chainer.backends.cuda.check_cuda_available()
         chainer.backends.cuda.get_device(args.gpu).use()

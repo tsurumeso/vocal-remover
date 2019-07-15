@@ -61,5 +61,11 @@ def create_dataset(filelist, cropsize, patches, validation=False):
                     # flip lr
                     X_dataset[idx] = X_dataset[idx, ::-1]
                     y_dataset[idx] = y_dataset[idx, ::-1]
-
+                # if np.random.uniform() < 0.5:
+                #     # random panning
+                #     vocal = X_dataset[idx] - y_dataset[idx]
+                #     vocal = np.clip(vocal, 0, 1)
+                #     coef = np.random.uniform(0.5, 1)
+                #     vocal[np.random.randint(0, 2)] *= coef
+                #     X_dataset[idx] = y_dataset[idx] + vocal
     return X_dataset, y_dataset

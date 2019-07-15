@@ -28,6 +28,12 @@ if __name__ == '__main__':
         model.to_gpu()
     print('done')
 
+    # dummy = model.xp.zeros((1, 2, 512, 512), dtype=np.float32)
+    # y = model(dummy)
+    # g = chainer.computational_graph.build_computational_graph([y])
+    # with open('graph.dot', 'w') as o:
+    #     o.write(g.dump())
+
     print('loading wave source...', end=' ')
     X, _ = librosa.load(
         args.input, 32000, False, dtype=np.float32, res_type='kaiser_fast')
@@ -63,9 +69,11 @@ if __name__ == '__main__':
             pred[2] = pred[2, ::-1, :, :]
             pred[3] = pred[3, ::-1, :, ::-1]
             mask = pred.mean(axis=0)[None]
+            # mask[mask > 0.9] = 1
+            # mask[mask < 0.1] = 0
 
             import cv2
-            norm_mask = np.uint8((1 - np.mean(mask, axis=1)) * 255)[0, ::-1]
+            norm_mask = np.uint8((np.mean(mask, axis=1)) * 255)[0, ::-1]
             hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_JET)
             cv2.imwrite('mask{}.png'.format(j), hm)
 
