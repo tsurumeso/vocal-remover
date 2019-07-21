@@ -71,13 +71,7 @@ def cache_or_load(mix_path, inst_path, sr, hop_length):
             inst_path, sr, False, dtype=np.float32, res_type='kaiser_fast')
         X, _ = librosa.effects.trim(X)
         y, _ = librosa.effects.trim(y)
-
-        a, b = align_wave_head_and_tail(X, y, sr)
-
-        # if 'mixture' in mix_path and delay != 0:
-        #     print('\n', mix_path, delay)
-        #     librosa.output.write_wav('noisy.wav', X - y, sr * 2)
-        #     input()
+        X, y = align_wave_head_and_tail(X, y, sr)
 
         X = calc_spec(X, hop_length)
         y = calc_spec(y, hop_length)
