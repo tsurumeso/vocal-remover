@@ -6,9 +6,6 @@ from lib import spec_utils
 
 def mixup_generator(X, y, alpha):
     perm = np.random.permutation(len(X))
-    # perm = np.random.permutation(len(X))[:len(X) // 2]
-    # if len(perm) % 2 != 0:
-    #     perm = perm[:-1]
     for i in range(0, len(perm), 2):
         lam = np.random.beta(alpha, alpha)
         X[perm[i]] = lam * X[perm[i]] + (1 - lam) * X[perm[i + 1]]
@@ -17,36 +14,25 @@ def mixup_generator(X, y, alpha):
     return X, y
 
 
-# def active_cropping(X, y, cropsize, validation):
-#     X_best = None
-#     y_best = None
-#     if np.random.uniform() < 0.5 and not validation:
-#         score = 0
-#         for _ in range(5):
-#             start = np.random.randint(0, X.shape[2] - cropsize)
-#             X_tmp = X[:, :-128, start:start + cropsize]
-#             y_tmp = y[:, :-128, start:start + cropsize]
-#             tmp_score = np.sum(np.clip(X_tmp - y_tmp, 0, 1))
-#             if tmp_score > score:
-#                 score = tmp_score
-#                 X_best = X_tmp.copy()
-#                 y_best = y_tmp.copy()
-#     else:
-#         start = np.random.randint(0, X.shape[2] - cropsize)
-#         X_best = X[:, :-128, start:start + cropsize]
-#         y_best = y[:, :-128, start:start + cropsize]
-
-#     return X_best, y_best
+def get_oracle_data(X, y, instance_loss, oracle_rate, oracle_drop_rate):
+    k = int(len(X) * oracle_rate * (1 / (1 - oracle_drop_rate)))
+    n = int(len(X) * oracle_rate)
+    idx = np.argsort(instance_loss)[::-1][:k]
+    idx = np.random.choice(idx, n, replace=False)
+    oracle_X = X[idx].copy()
+    oracle_y = y[idx].copy()
+    return oracle_X, oracle_y, idx
 
 
-def create_dataset(filelist, cropsize, patches, validation=False):
+def create_dataset(filelist, cropsize, patches, sr, hop_length,
+                   validation=False):
     len_dataset = patches * len(filelist)
     X_dataset = np.zeros(
-        (len_dataset, 2, 512, cropsize), dtype=np.float32)
+        (len_dataset, 2, hop_length, cropsize), dtype=np.float32)
     y_dataset = np.zeros(
-        (len_dataset, 2, 512, cropsize), dtype=np.float32)
+        (len_dataset, 2, hop_length, cropsize), dtype=np.float32)
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
-        X, y = spec_utils.cache_or_load(X_path, y_path)
+        X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length)
         for j in range(patches):
             idx = i * patches + j
             start = np.random.randint(0, X.shape[2] - cropsize)
@@ -58,14 +44,13 @@ def create_dataset(filelist, cropsize, patches, validation=False):
                     X_dataset[idx] = X_dataset[idx, :, :, ::-1]
                     y_dataset[idx] = y_dataset[idx, :, :, ::-1]
                 if np.random.uniform() < 0.5:
-                    # flip lr
+                    # swap channel
                     X_dataset[idx] = X_dataset[idx, ::-1]
                     y_dataset[idx] = y_dataset[idx, ::-1]
                 # if np.random.uniform() < 0.5:
-                #     # random panning
-                #     vocal = X_dataset[idx] - y_dataset[idx]
-                #     vocal = np.clip(vocal, 0, 1)
-                #     coef = np.random.uniform(0.5, 1)
-                #     vocal[np.random.randint(0, 2)] *= coef
-                #     X_dataset[idx] = y_dataset[idx] + vocal
+                #     f = np.random.randint(0, 512 // 4)
+                #     f0 = np.random.randint(0, 512 - f)
+                #     X_dataset[idx, :, f0:f0 + f, :] = 0
+                #     y_dataset[idx, :, f0:f0 + f, :] = 0
+
     return X_dataset, y_dataset

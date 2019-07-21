@@ -17,11 +17,12 @@ def crop_and_concat(h1, h2, concat=True):
         return h2
 
 
-def calc_spec(X, phase=False):
-    spec_left = librosa.stft(X[0], 1022, hop_length=512)
+def calc_spec(X, hop_length, phase=False):
+    n_fft = (hop_length - 1) * 2
+    spec_left = librosa.stft(X[0], n_fft, hop_length=hop_length)
     mag_left = np.abs(spec_left)
 
-    spec_right = librosa.stft(X[1], 1022, hop_length=512)
+    spec_right = librosa.stft(X[1], n_fft, hop_length=hop_length)
     mag_right = np.abs(spec_right)
 
     mag = np.asarray([mag_left, mag_right])
@@ -35,7 +36,27 @@ def calc_spec(X, phase=False):
         return mag
 
 
-def cache_or_load(mix_path, inst_path, sr=32000):
+def align_wave_head_and_tail(a, b, sr):
+    a_mono = a[:, :sr * 2].sum(axis=0)
+    b_mono = b[:, :sr * 2].sum(axis=0)
+    a_mono -= a_mono.mean()
+    b_mono -= b_mono.mean()
+    offset = len(a_mono) - 1
+    delay = np.argmax(np.correlate(a_mono, b_mono, 'full')) - offset
+
+    if delay > 0:
+        a = a[:, delay:]
+    else:
+        b = b[:, np.abs(delay):]
+    if a.shape[1] < b.shape[1]:
+        b = b[:, :a.shape[1]]
+    else:
+        a = a[:, :b.shape[1]]
+
+    return a, b
+
+
+def cache_or_load(mix_path, inst_path, sr, hop_length):
     _, ext = os.path.splitext(mix_path)
     spec_mix_path = mix_path.replace(ext, '.npy')
     spec_inst_path = inst_path.replace(ext, '.npy')
@@ -51,29 +72,15 @@ def cache_or_load(mix_path, inst_path, sr=32000):
         X, _ = librosa.effects.trim(X)
         y, _ = librosa.effects.trim(y)
 
-        X_mono = X[:, :sr * 2].sum(axis=0)
-        y_mono = y[:, :sr * 2].sum(axis=0)
-        X_mono -= X_mono.mean()
-        y_mono -= y_mono.mean()
-        offset = len(y_mono) - 1
-        delay = np.argmax(np.correlate(X_mono, y_mono, 'full')) - offset
-
-        if delay > 0:
-            X = X[:, delay:]
-        else:
-            y = y[:, np.abs(delay):]
-        if X.shape[1] < y.shape[1]:
-            y = y[:, :X.shape[1]]
-        else:
-            X = X[:, :y.shape[1]]
+        a, b = align_wave_head_and_tail(X, y, sr)
 
         # if 'mixture' in mix_path and delay != 0:
         #     print('\n', mix_path, delay)
         #     librosa.output.write_wav('noisy.wav', X - y, sr * 2)
         #     input()
 
-        X = calc_spec(X)
-        y = calc_spec(y)
+        X = calc_spec(X, hop_length)
+        y = calc_spec(y, hop_length)
 
         _, ext = os.path.splitext(mix_path)
         np.save(spec_mix_path, X)

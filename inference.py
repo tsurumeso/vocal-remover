@@ -2,6 +2,7 @@ import argparse
 
 import chainer
 from chainer import backends
+import cv2
 import librosa
 import numpy as np
 from tqdm import tqdm
@@ -14,6 +15,8 @@ p = argparse.ArgumentParser()
 p.add_argument('--gpu', '-g', type=int, default=-1)
 p.add_argument('--model', '-m', type=str, default='models/baseline.npz')
 p.add_argument('--input', '-i', required=True)
+p.add_argument('--sr', '-r', type=int, default=44100)
+p.add_argument('--hop_length', '-l', type=int, default=1024)
 p.add_argument('--window_size', '-w', type=int, default=1024)
 args = p.parse_args()
 
@@ -28,19 +31,13 @@ if __name__ == '__main__':
         model.to_gpu()
     print('done')
 
-    # dummy = model.xp.zeros((1, 2, 512, 512), dtype=np.float32)
-    # y = model(dummy)
-    # g = chainer.computational_graph.build_computational_graph([y])
-    # with open('graph.dot', 'w') as o:
-    #     o.write(g.dump())
-
     print('loading wave source...', end=' ')
-    X, _ = librosa.load(
-        args.input, 32000, False, dtype=np.float32, res_type='kaiser_fast')
+    X, sr = librosa.load(
+        args.input, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
     print('done')
 
-    print('mixture stft...', end=' ')
-    X, phase = spec_utils.calc_spec(X, True)
+    print('wave source stft...', end=' ')
+    X, phase = spec_utils.calc_spec(X, args.hop_length, phase=True)
     ref_max = X.max()
     X /= ref_max
     print('done')
@@ -50,6 +47,7 @@ if __name__ == '__main__':
     right = roi_size + left - (X.shape[2] % left)
     X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
 
+    masks = []
     inst_preds = []
     vocal_preds = []
     with chainer.no_backprop_mode(), chainer.using_config('train', False):
@@ -69,26 +67,26 @@ if __name__ == '__main__':
             pred[2] = pred[2, ::-1, :, :]
             pred[3] = pred[3, ::-1, :, ::-1]
             mask = pred.mean(axis=0)[None]
-            # mask[mask > 0.9] = 1
-            # mask[mask < 0.1] = 0
 
-            import cv2
             norm_mask = np.uint8((np.mean(mask, axis=1)) * 255)[0, ::-1]
             hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_JET)
-            cv2.imwrite('mask{}.png'.format(j), hm)
+            masks.append(hm)
 
             X_window = spec_utils.crop_and_concat(mask, X_window, False)
             inst_preds.append((X_window * mask)[0])
             vocal_preds.append((X_window * (1 - mask))[0])
 
+    mask = np.concatenate(masks, axis=1)
+    cv2.imwrite('mask.png', mask)
+
     inst_preds = np.concatenate(inst_preds, axis=2)
     print('instrumental inverse stft...', end=' ')
-    wav = spec_utils.spec_to_wav(inst_preds, phase, 512, ref_max)
+    wav = spec_utils.spec_to_wav(inst_preds, phase, args.hop_length, ref_max)
     print('done')
-    librosa.output.write_wav('instrumental.wav', wav, 32000)
+    librosa.output.write_wav('instrumental.wav', wav, sr)
 
     vocal_preds = np.concatenate(vocal_preds, axis=2)
     print('vocal inverse stft...', end=' ')
-    wav = spec_utils.spec_to_wav(vocal_preds, phase, 512, ref_max)
+    wav = spec_utils.spec_to_wav(vocal_preds, phase, args.hop_length, ref_max)
     print('done')
-    librosa.output.write_wav('vocal.wav', wav, 32000)
+    librosa.output.write_wav('vocal.wav', wav, sr)

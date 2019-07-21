@@ -30,35 +30,6 @@ class Conv2DBNActiv(chainer.Chain):
         return h
 
 
-class MobileConv2DBNActiv(chainer.Chain):
-
-    def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 activ=F.leaky_relu):
-        super(MobileConv2DBNActiv, self).__init__()
-        with self.init_scope():
-            self.conv1 = L.DepthwiseConvolution2D(
-                in_channels, 1, ksize, stride, pad, nobias=True)
-            self.conv2 = L.Convolution2D(
-                in_channels, out_channels, 1, 1, 0, nobias=True)
-            self.bn1 = L.BatchNormalization(in_channels, axis=(0, 2, 3))
-            self.bn2 = L.BatchNormalization(out_channels)
-
-        self.activ = activ
-
-    def __call__(self, x):
-        h = self.bn1(self.conv1(x))
-
-        if self.activ is not None:
-            h = self.activ(h)
-
-        h = self.bn2(self.conv2(h))
-
-        if self.activ is not None:
-            h = self.activ(h)
-
-        return h
-
-
 class ConvBlock(chainer.Chain):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
@@ -78,45 +49,17 @@ class ConvBlock(chainer.Chain):
         self.scse = scse
 
     def __call__(self, x):
-        h = self.conv1(x)
-        h = self.conv2(h)
+        h1 = self.conv1(x)
+        h2 = self.conv2(h1)
 
         if self.scse:
-            sc = F.sigmoid(self.conv_sc(h))
-            se = F.relu(self.fc1(F.average(h, axis=(2, 3))))
+            sc = F.sigmoid(self.conv_sc(h2))
+            se = F.relu(self.fc1(F.average(h2, axis=(2, 3))))
             se = F.sigmoid(self.fc2(se))[:, :, None, None]
-            se = F.broadcast_to(se, h.shape)
-            h = h * sc + h * se
+            se = F.broadcast_to(se, h2.shape)
+            h2 = h2 * sc + h2 * se
 
-        return h
-
-
-class MobileConvBlock(chainer.Chain):
-
-    def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 activ=F.leaky_relu, r=16, se=False):
-        super(MobileConvBlock, self).__init__()
-        with self.init_scope():
-            self.conv1 = MobileConv2DBNActiv(
-                in_channels, out_channels, ksize, 1, pad, activ=activ)
-            self.conv2 = MobileConv2DBNActiv(
-                out_channels, out_channels, ksize, stride, pad, activ=activ)
-
-            if se:
-                self.fc1 = L.Linear(out_channels, out_channels // r)
-                self.fc2 = L.Linear(out_channels // r, out_channels)
-
-    def __call__(self, x):
-        h = self.conv1(x)
-        h = self.conv2(h)
-
-        if hasattr(self, 'fc1') and hasattr(self, 'fc2'):
-            se = F.relu(self.fc1(F.average(h, axis=(2, 3))))
-            se = F.sigmoid(self.fc2(se))[:, :, None, None]
-            se = F.broadcast_to(se, h.shape)
-            h = h * se
-
-        return h
+        return h2, h1
 
 
 class BaseUNet(chainer.Chain):
@@ -145,14 +88,15 @@ class BaseUNet(chainer.Chain):
                 None, ch, 3, pad=pad, dropout=False, activ=F.relu)
 
     def __call__(self, x):
-        e1 = self.enc1(x)
-        e2 = self.enc2(e1)
-        e3 = self.enc3(e2)
-        e4 = self.enc4(e3)
-        e5 = self.enc5(e4)
+        h, e1 = self.enc1(x)
+        h, e2 = self.enc2(h)
+        h, e3 = self.enc3(h)
+        h, e4 = self.enc4(h)
+        h, e5 = self.enc5(h)
+        h, e6 = self.enc6(h)
 
-        h = self.dec6(self.enc6(e5))
-
+        h = F.resize_images(h, (h.shape[2] * 2, h.shape[3] * 2))
+        h = self.dec6(spec_utils.crop_and_concat(h, e6))
         h = F.resize_images(h, (h.shape[2] * 2, h.shape[3] * 2))
         h = self.dec5(spec_utils.crop_and_concat(h, e5))
         h = F.resize_images(h, (h.shape[2] * 2, h.shape[3] * 2))
@@ -179,18 +123,16 @@ class MultiBandUNet(chainer.Chain):
             self.conv = Conv2DBNActiv(None, 16, 3, pad=(1, 0), activ=F.relu)
             self.out = L.Convolution2D(None, 2, 1, nobias=True)
 
-        self.offset = 223
+        self.offset = 160
 
     def __call__(self, x):
-        x = chainer.Variable(x)
-        x_l, x_h = x[:, :, :256], x[:, :, 256:]
-        h = self.full_band_unet(x)
+        bandw = x.shape[2] // 2
+        x_l, x_h = x[:, :, :bandw], x[:, :, bandw:]
         h1 = self.l_band_unet(x_l)
         h2 = self.h_band_unet(x_h)
-        h = F.concat([h, F.concat([h1, h2], axis=2)])
+        h = self.full_band_unet(x)
 
-        h = F.resize_images(h, (h.shape[2] * 2, h.shape[3] * 2))
-        h = self.conv(spec_utils.crop_and_concat(h, x))
+        h = self.conv(F.concat([h, F.concat([h1, h2], axis=2)]))
         h = F.sigmoid(self.out(h))
 
         return h

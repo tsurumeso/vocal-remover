@@ -3,4 +3,5 @@
 *.png
 *.wav
 *.mp3
+*.npy
 .vscode/
