@@ -84,9 +84,8 @@ def cache_or_load(mix_path, inst_path, sr, hop_length):
     return X / coeff, y / coeff
 
 
-def spec_to_wav(spec, phase, hop_length, ref_max):
-    offset = phase.shape[2]
-    spec = spec[:, :, :offset] * ref_max * phase
+def spec_to_wav(mag, phase, hop_length):
+    spec = mag * phase
     wav_left = librosa.istft(spec[0], hop_length=hop_length)
     wav_right = librosa.istft(spec[1], hop_length=hop_length)
     wav = np.asarray([wav_left, wav_right])

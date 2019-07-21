@@ -149,7 +149,7 @@ if __name__ == '__main__':
             valid_loss = sum_loss / len(X_valid)
             print('  * inner epoch {}'.format(inner_epoch))
             print('    * training loss = {:.6f}, validation loss = {:.6f}'.format(
-                train_loss * 100, valid_loss * 100))
+                train_loss * 1000, valid_loss * 1000))
 
             log.append([train_loss, valid_loss])
             np.save(logname, np.asarray(log))

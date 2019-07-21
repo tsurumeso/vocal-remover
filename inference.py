@@ -18,6 +18,7 @@ p.add_argument('--input', '-i', required=True)
 p.add_argument('--sr', '-r', type=int, default=44100)
 p.add_argument('--hop_length', '-l', type=int, default=1024)
 p.add_argument('--window_size', '-w', type=int, default=1024)
+p.add_argument('--out_mask', '-M', action='store_true')
 args = p.parse_args()
 
 
@@ -48,8 +49,6 @@ if __name__ == '__main__':
     X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
 
     masks = []
-    inst_preds = []
-    vocal_preds = []
     with chainer.no_backprop_mode(), chainer.using_config('train', False):
         for j in tqdm(range(int(np.ceil(X.shape[2] / roi_size)))):
             start = j * roi_size
@@ -66,27 +65,24 @@ if __name__ == '__main__':
             pred[1] = pred[1, :, :, ::-1]
             pred[2] = pred[2, ::-1, :, :]
             pred[3] = pred[3, ::-1, :, ::-1]
-            mask = pred.mean(axis=0)[None]
+            mask = pred.mean(axis=0)
+            masks.append(mask)
 
-            norm_mask = np.uint8((np.mean(mask, axis=1)) * 255)[0, ::-1]
-            hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_JET)
-            masks.append(hm)
+    if args.out_mask:
+        norm_mask = np.uint8(mask.mean(axis=0) * 255)[::-1]
+        hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_JET)
+        cv2.imwrite('mask.png', hm)
 
-            X_window = spec_utils.crop_and_concat(mask, X_window, False)
-            inst_preds.append((X_window * mask)[0])
-            vocal_preds.append((X_window * (1 - mask))[0])
+    mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
+    inst_pred = X * mask * ref_max
+    vocal_pred = X * (1 - mask) * ref_max
 
-    mask = np.concatenate(masks, axis=1)
-    cv2.imwrite('mask.png', mask)
-
-    inst_preds = np.concatenate(inst_preds, axis=2)
     print('instrumental inverse stft...', end=' ')
-    wav = spec_utils.spec_to_wav(inst_preds, phase, args.hop_length, ref_max)
+    wav = spec_utils.spec_to_wav(inst_pred, phase, args.hop_length)
     print('done')
     librosa.output.write_wav('instrumental.wav', wav, sr)
 
-    vocal_preds = np.concatenate(vocal_preds, axis=2)
     print('vocal inverse stft...', end=' ')
-    wav = spec_utils.spec_to_wav(vocal_preds, phase, args.hop_length, ref_max)
+    wav = spec_utils.spec_to_wav(vocal_pred, phase, args.hop_length)
     print('done')
     librosa.output.write_wav('vocal.wav', wav, sr)
