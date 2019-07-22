@@ -148,8 +148,8 @@ if __name__ == '__main__':
 
             valid_loss = sum_loss / len(X_valid)
             print('  * inner epoch {}'.format(inner_epoch))
-            print('    * training loss = {:.6f}, validation loss = {:.6f}'.format(
-                train_loss * 1000, valid_loss * 1000))
+            print('    * training loss = {:.6f}, validation loss = {:.6f}'
+                  .format(train_loss * 1000, valid_loss * 1000))
 
             log.append([train_loss, valid_loss])
             np.save(logname, np.asarray(log))
@@ -166,8 +166,8 @@ if __name__ == '__main__':
                 if optimizer.alpha < args.lr_min:
                     optimizer.alpha = args.lr_min
                 else:
-                    print('    * learning rate decay: {:.6f}'.format(
-                        optimizer.alpha))
+                    print('    * learning rate decay: {:.6f}'
+                          .format(optimizer.alpha))
 
         if args.oracle_rate > 0:
             instance_loss /= args.inner_epoch

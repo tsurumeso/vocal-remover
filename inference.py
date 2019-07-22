@@ -68,14 +68,14 @@ if __name__ == '__main__':
             mask = pred.mean(axis=0)
             masks.append(mask)
 
-    if args.out_mask:
-        norm_mask = np.uint8(mask.mean(axis=0) * 255)[::-1]
-        hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_JET)
-        cv2.imwrite('mask.png', hm)
-
     mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
     inst_pred = X * mask * ref_max
     vocal_pred = X * (1 - mask) * ref_max
+
+    if args.out_mask:
+        norm_mask = np.uint8(mask.mean(axis=0) * 255)[::-1]
+        hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_MAGMA)
+        cv2.imwrite('mask.png', hm)
 
     print('instrumental inverse stft...', end=' ')
     wav = spec_utils.spec_to_wav(inst_pred, phase, args.hop_length)
