@@ -30,6 +30,7 @@ if __name__ == '__main__':
         chainer.backends.cuda.check_cuda_available()
         chainer.backends.cuda.get_device(args.gpu).use()
         model.to_gpu()
+    xp = model.xp
     print('done')
 
     print('loading wave source...', end=' ')
@@ -60,7 +61,7 @@ if __name__ == '__main__':
                 X_window[:, ::-1, :, ::-1],
             ])
 
-            pred = model(model.xp.asarray(X_tta))
+            pred = model(xp.asarray(X_tta))
             pred = backends.cuda.to_cpu(pred.data)
             pred[1] = pred[1, :, :, ::-1]
             pred[2] = pred[2, ::-1, :, :]

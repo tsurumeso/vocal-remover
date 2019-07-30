@@ -20,12 +20,9 @@ def crop_and_concat(h1, h2, concat=True):
 def calc_spec(X, hop_length, phase=False):
     n_fft = (hop_length - 1) * 2
     spec_left = librosa.stft(X[0], n_fft, hop_length=hop_length)
-    mag_left = np.abs(spec_left)
-
     spec_right = librosa.stft(X[1], n_fft, hop_length=hop_length)
-    mag_right = np.abs(spec_right)
 
-    mag = np.asarray([mag_left, mag_right])
+    mag = np.abs([spec_left, spec_right])
 
     if phase:
         phase_left = np.exp(1.j * np.angle(spec_left))

@@ -27,9 +27,9 @@ p.add_argument('--lr_decay', type=float, default=0.9)
 p.add_argument('--lr_decay_interval', type=int, default=6)
 p.add_argument('--batchsize', '-B', type=int, default=8)
 p.add_argument('--val_batchsize', '-b', type=int, default=16)
-p.add_argument('--cropsize', '-c', type=int, default=512)
+p.add_argument('--cropsize', '-c', type=int, default=448)
 p.add_argument('--patches', '-p', type=int, default=16)
-p.add_argument('--epoch', '-E', type=int, default=80)
+p.add_argument('--epoch', '-E', type=int, default=100)
 p.add_argument('--inner_epoch', '-e', type=int, default=4)
 p.add_argument('--oracle_rate', '-O', type=float, default=0)
 p.add_argument('--oracle_drop_rate', '-o', type=float, default=0.5)
@@ -109,6 +109,7 @@ if __name__ == '__main__':
             sum_loss = 0
             best_count += 1
             perm = np.random.permutation(len(X_train))
+            print('  * inner epoch {}'.format(inner_epoch))
             for i in range(0, len(X_train), args.batchsize):
                 local_perm = perm[i: i + args.batchsize]
                 X_batch = xp.asarray(X_train[local_perm])
@@ -147,7 +148,6 @@ if __name__ == '__main__':
                     sum_loss += float(loss.data) * len(X_batch)
 
             valid_loss = sum_loss / len(X_valid)
-            print('  * inner epoch {}'.format(inner_epoch))
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
                   .format(train_loss * 1000, valid_loss * 1000))
 

@@ -116,9 +116,9 @@ class MultiBandUNet(chainer.Chain):
     def __init__(self):
         super(MultiBandUNet, self).__init__()
         with self.init_scope():
-            self.l_band_unet = BaseUNet(8, pad=(1, 0))
-            self.h_band_unet = BaseUNet(8, pad=(1, 0))
-            self.full_band_unet = BaseUNet(16, pad=(1, 0))
+            self.l_band_unet = BaseUNet(16, pad=(1, 0))
+            self.h_band_unet = BaseUNet(16, pad=(1, 0))
+            self.full_band_unet = BaseUNet(8, pad=(1, 0))
 
             self.conv = Conv2DBNActiv(None, 16, 3, pad=(1, 0), activ=F.relu)
             self.out = L.Convolution2D(None, 2, 1, nobias=True)
