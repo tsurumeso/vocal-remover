@@ -1,5 +1,5 @@
 # vocal-remover
-This is a spectrogram based vocal seperation tool.
+This is a spectrogram based vocal seperation tool using deep neural networks.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ Download the latest version from [here](https://github.com/tsurumeso/vocal-remov
 ## Usage
 
 ```
-python inference.py --input path/to/music/file --gpu 0
+python inference.py --input path/to/audio/file --gpu 0
 ```
 
 ## References
