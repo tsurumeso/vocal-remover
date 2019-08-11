@@ -21,15 +21,14 @@ def calc_spec(X, hop_length, phase=False):
     n_fft = (hop_length - 1) * 2
     spec_left = librosa.stft(X[0], n_fft, hop_length=hop_length)
     spec_right = librosa.stft(X[1], n_fft, hop_length=hop_length)
-
-    mag = np.abs([spec_left, spec_right])
+    spec = np.asarray([spec_left, spec_right])
 
     if phase:
-        phase_left = np.exp(1.j * np.angle(spec_left))
-        phase_right = np.exp(1.j * np.angle(spec_right))
-        phase = np.asarray([phase_left, phase_right])
+        mag = np.abs(spec)
+        phase = np.exp(1.j * np.angle(spec))
         return mag, phase
     else:
+        mag = np.abs(spec)
         return mag
 
 
