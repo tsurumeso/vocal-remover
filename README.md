@@ -1,4 +1,5 @@
 # vocal-remover
+This is a spectrogram based vocal seperation tool.
 
 ## Requirements
 
@@ -20,9 +21,7 @@ Install CuPy precompiled binary package which includes the latest version of cuD
 See: [CuPy Installation Guide](https://docs-cupy.chainer.org/en/stable/install.html#install-cupy)
 
 ### Getting vocal-remover
-```
-git clone https://github.com/tsurumeso/vocal-remover.git
-```
+Download the latest version from [here](https://github.com/tsurumeso/vocal-remover/releases).
 
 ## Usage
 
