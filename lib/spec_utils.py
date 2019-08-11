@@ -33,6 +33,32 @@ def calc_spec(X, hop_length, phase=False):
         return mag
 
 
+def mask_uninformative(mask, ref, min_range, thres):
+    fade_area = 32
+    idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
+    starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
+    ends = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
+    uninformative = np.where(ends - starts > min_range)[0]
+    if len(uninformative) > 0:
+        starts = starts[uninformative]
+        ends = ends[uninformative]
+        old_e = None
+        for s, e in zip(starts, ends):
+            if old_e is not None and s - old_e < fade_area:
+                s = old_e - fade_area * 2
+            elif s != 0:
+                start_mask = mask[:, :, s:s + fade_area]
+                np.clip(start_mask + np.linspace(0, 1, fade_area), 0, 1,
+                        out=start_mask)
+            if e != mask.shape[2]:
+                end_mask = mask[:, :, e - fade_area:e]
+                np.clip(end_mask + np.linspace(1, 0, fade_area), 0, 1,
+                        out=end_mask)
+            mask[:, :, s + fade_area:e - fade_area] = 1
+            old_e = e
+    return mask
+
+
 def align_wave_head_and_tail(a, b, sr):
     a_mono = a[:, :sr * 2].sum(axis=0)
     b_mono = b[:, :sr * 2].sum(axis=0)

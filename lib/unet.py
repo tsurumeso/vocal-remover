@@ -127,10 +127,11 @@ class MultiBandUNet(chainer.Chain):
 
     def __call__(self, x):
         bandw = x.shape[2] // 2
+        diff = (x[:, 0] - x[:, 1])[:, None]
         x_l, x_h = x[:, :, :bandw], x[:, :, bandw:]
         h1 = self.l_band_unet(x_l)
         h2 = self.h_band_unet(x_h)
-        h = self.full_band_unet(x)
+        h = self.full_band_unet(self.xp.concatenate([x, diff], axis=1))
 
         h = self.conv(F.concat([h, F.concat([h1, h2], axis=2)]))
         h = F.sigmoid(self.out(h))

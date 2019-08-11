@@ -54,20 +54,12 @@ if __name__ == '__main__':
         for j in tqdm(range(int(np.ceil(X.shape[2] / roi_size)))):
             start = j * roi_size
             X_window = X_pad[None, :, :, start:start + args.window_size]
-            X_tta = np.concatenate([
-                X_window,
-                X_window[:, :, :, ::-1],
-                X_window[:, ::-1, :, :],
-                X_window[:, ::-1, :, ::-1],
-            ])
+            X_tta = np.concatenate([X_window, X_window[:, ::-1, :, :]])
 
             pred = model(xp.asarray(X_tta))
             pred = backends.cuda.to_cpu(pred.data)
-            pred[1] = pred[1, :, :, ::-1]
-            pred[2] = pred[2, ::-1, :, :]
-            pred[3] = pred[3, ::-1, :, ::-1]
-            mask = pred.mean(axis=0)
-            masks.append(mask)
+            pred[1] = pred[1, ::-1, :, :]
+            masks.append(pred.mean(axis=0))
 
     mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
     inst_pred = X * mask * ref_max

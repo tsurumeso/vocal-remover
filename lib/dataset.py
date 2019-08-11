@@ -5,7 +5,9 @@ from lib import spec_utils
 
 
 def mixup_generator(X, y, alpha):
-    perm = np.random.permutation(len(X))
+    perm = np.random.permutation(len(X))[:len(X) // 2]
+    if len(perm) % 2 != 0:
+        perm = perm[:-1]
     for i in range(0, len(perm), 2):
         lam = np.random.beta(alpha, alpha)
         X[perm[i]] = lam * X[perm[i]] + (1 - lam) * X[perm[i + 1]]
@@ -39,10 +41,6 @@ def create_dataset(filelist, cropsize, patches, sr, hop_length,
             X_dataset[idx] = X[:, :, start:start + cropsize]
             y_dataset[idx] = y[:, :, start:start + cropsize]
             if not validation:
-                if np.random.uniform() < 0.5:
-                    # flip time
-                    X_dataset[idx] = X_dataset[idx, :, :, ::-1]
-                    y_dataset[idx] = y_dataset[idx, :, :, ::-1]
                 if np.random.uniform() < 0.5:
                     # swap channel
                     X_dataset[idx] = X_dataset[idx, ::-1]

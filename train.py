@@ -34,7 +34,7 @@ p.add_argument('--inner_epoch', '-e', type=int, default=4)
 p.add_argument('--oracle_rate', '-O', type=float, default=0)
 p.add_argument('--oracle_drop_rate', '-o', type=float, default=0.5)
 p.add_argument('--mixup', '-M', action='store_true')
-p.add_argument('--mixup_alpha', '-a', type=float, default=0.4)
+p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
 args = p.parse_args()
 
 
@@ -78,7 +78,7 @@ if __name__ == '__main__':
     X_valid, y_valid = dataset.create_dataset(
         filelist=valid_filelist,
         cropsize=args.cropsize,
-        patches=64,
+        patches=48,
         sr=args.sr,
         hop_length=args.hop_length,
         validation=True)
