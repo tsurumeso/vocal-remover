@@ -8,7 +8,7 @@ from lib import spec_utils
 class Conv2DBNActiv(chainer.Chain):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 dropout=False, activ=F.leaky_relu):
+                 dropout=False, activ=F.relu):
         super(Conv2DBNActiv, self).__init__()
         with self.init_scope():
             self.conv = L.Convolution2D(
@@ -74,18 +74,12 @@ class BaseUNet(chainer.Chain):
             self.enc5 = ConvBlock(None, ch * 16, 3, stride=2, pad=pad)
             self.enc6 = ConvBlock(None, ch * 32, 3, stride=2, pad=pad)
 
-            self.dec6 = Conv2DBNActiv(
-                None, ch * 32, 3, pad=pad, dropout=True, activ=F.relu)
-            self.dec5 = Conv2DBNActiv(
-                None, ch * 16, 3, pad=pad, dropout=True, activ=F.relu)
-            self.dec4 = Conv2DBNActiv(
-                None, ch * 8, 3, pad=pad, dropout=True, activ=F.relu)
-            self.dec3 = Conv2DBNActiv(
-                None, ch * 4, 3, pad=pad, dropout=False, activ=F.relu)
-            self.dec2 = Conv2DBNActiv(
-                None, ch * 2, 3, pad=pad, dropout=False, activ=F.relu)
-            self.dec1 = Conv2DBNActiv(
-                None, ch, 3, pad=pad, dropout=False, activ=F.relu)
+            self.dec6 = Conv2DBNActiv(None, ch * 32, 3, pad=pad, dropout=True)
+            self.dec5 = Conv2DBNActiv(None, ch * 16, 3, pad=pad, dropout=True)
+            self.dec4 = Conv2DBNActiv(None, ch * 8, 3, pad=pad, dropout=True)
+            self.dec3 = Conv2DBNActiv(None, ch * 4, 3, pad=pad)
+            self.dec2 = Conv2DBNActiv(None, ch * 2, 3, pad=pad)
+            self.dec1 = Conv2DBNActiv(None, ch, 3, pad=pad)
 
     def __call__(self, x):
         h, e1 = self.enc1(x)
@@ -120,7 +114,7 @@ class MultiBandUNet(chainer.Chain):
             self.h_band_unet = BaseUNet(16, pad=(1, 0))
             self.full_band_unet = BaseUNet(8, pad=(1, 0))
 
-            self.conv = Conv2DBNActiv(None, 16, 3, pad=(1, 0), activ=F.relu)
+            self.conv = Conv2DBNActiv(None, 16, 3, pad=(1, 0))
             self.out = L.Convolution2D(None, 2, 1, nobias=True)
 
         self.offset = 160

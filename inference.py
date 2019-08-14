@@ -40,8 +40,8 @@ if __name__ == '__main__':
 
     print('wave source stft...', end=' ')
     X, phase = spec_utils.calc_spec(X, args.hop_length, phase=True)
-    ref_max = X.max()
-    X /= ref_max
+    coeff = X.max()
+    X /= coeff
     print('done')
 
     left = model.offset
@@ -62,8 +62,8 @@ if __name__ == '__main__':
             masks.append(pred.mean(axis=0))
 
     mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
-    inst_pred = X * mask * ref_max
-    vocal_pred = X * (1 - mask) * ref_max
+    inst_pred = X * mask * coeff
+    vocal_pred = X * (1 - mask) * coeff
 
     if args.out_mask:
         norm_mask = np.uint8(mask.mean(axis=0) * 255)[::-1]

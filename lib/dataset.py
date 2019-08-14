@@ -46,9 +46,16 @@ def create_dataset(filelist, cropsize, patches, sr, hop_length,
                     X_dataset[idx] = X_dataset[idx, ::-1]
                     y_dataset[idx] = y_dataset[idx, ::-1]
                 # if np.random.uniform() < 0.5:
-                #     f = np.random.randint(0, 512 // 4)
-                #     f0 = np.random.randint(0, 512 - f)
+                #     # spec aug
+                #     f = np.random.randint(0, hop_length // 4)
+                #     f0 = np.random.randint(0, hop_length - f)
                 #     X_dataset[idx, :, f0:f0 + f, :] = 0
                 #     y_dataset[idx, :, f0:f0 + f, :] = 0
+                # if np.random.uniform() < 0.5:
+                #     # spec aug
+                #     t = np.random.randint(0, hop_length // 8)
+                #     t0 = np.random.randint(0, cropsize - t)
+                #     X_dataset[idx, :, :, t0:t0 + t] = 0
+                #     y_dataset[idx, :, :, t0:t0 + t] = 0
 
     return X_dataset, y_dataset
