@@ -26,14 +26,18 @@ Download the latest version from [here](https://github.com/tsurumeso/vocal-remov
 ## Usage
 
 ```
-python inference.py --input path/to/audio/file --gpu 0
+python inference.py --input path/to/mixture/audio --gpu 0
 ```
+
+Running the code shown above will split the mixture audio into an instrumental track and a vocal track. They are saved as `instrumental.wav` and `vocal.wav`.
 
 ## Train your own model
 
 ```
 python train.py -i dataset/instrumentals -m dataset/mixtures -M -g 0
 ```
+
+`-i` specifies an instrumental audio directory, and `-m` specifies the corresponding mixture audio directory.
 
 ```
 dataset/
