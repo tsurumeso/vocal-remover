@@ -29,6 +29,24 @@ Download the latest version from [here](https://github.com/tsurumeso/vocal-remov
 python inference.py --input path/to/audio/file --gpu 0
 ```
 
+## Train your own model
+
+```
+python train.py -i dataset/instrumentals -m dataset/mixtures -M -g 0
+```
+
+```
+dataset/
+  +- instrumentals/
+  |    +- 01_foo_inst.wav
+  |    +- 02_bar_inst.mp3
+  |    +- ...
+  +- mixtures/
+       +- 01_foo_mix.wav
+       +- 02_bar_mix.mp3
+       +- ...
+```
+
 ## References
 
 - [1] Jansson et al., "Singing Voice Separation with Deep U-Net Convolutional Networks", https://ismir2017.smcnus.org/wp-content/uploads/2017/10/171_Paper.pdf
