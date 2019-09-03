@@ -1,17 +1,11 @@
 # vocal-remover
 This is a spectrogram based vocal seperation tool using deep neural networks.
 
-## Requirements
-  - Chainer
-  - CuPy (for GPU support)
-  - LibROSA
-
 ## Installation
 
-### Install Python packages
+### Install required packages
 ```
-pip install chainer
-pip install librosa
+pip install -r requirements.txt
 ```
 
 ### Enable GPU support

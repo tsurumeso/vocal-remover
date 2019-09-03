@@ -1,0 +1,4 @@
+tqdm==4.32.1
+librosa==0.7.0
+chainer==6.3.0
+opencv_python==4.1.0.25
