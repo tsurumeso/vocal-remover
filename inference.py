@@ -62,6 +62,8 @@ if __name__ == '__main__':
             masks.append(pred.mean(axis=0))
 
     mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
+    # vocal_pred = X * (1 - mask) * coeff
+    # mask = spec_utils.mask_uninformative(mask, vocal_pred)
     inst_pred = X * mask * coeff
     vocal_pred = X * (1 - mask) * coeff
 

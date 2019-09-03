@@ -32,7 +32,7 @@ def calc_spec(X, hop_length, phase=False):
         return mag
 
 
-def mask_uninformative(mask, ref, min_range, thres):
+def mask_uninformative(mask, ref, min_range=64, thres=0.4):
     fade_area = 32
     idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
     starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
