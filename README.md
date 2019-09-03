@@ -24,7 +24,6 @@ python inference.py --input path/to/mixture/audio
 ```
 
 ### Run on GPU
-Please specify GPU ID to be used with `--gpu` option.
 ```
 python inference.py --input path/to/mixture/audio --gpu 0
 ```
