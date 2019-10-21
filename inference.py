@@ -19,6 +19,7 @@ p.add_argument('--sr', '-r', type=int, default=44100)
 p.add_argument('--hop_length', '-l', type=int, default=1024)
 p.add_argument('--window_size', '-w', type=int, default=1024)
 p.add_argument('--out_mask', '-M', action='store_true')
+p.add_argument('--postprocess', '-p', action='store_true')
 args = p.parse_args()
 
 
@@ -62,8 +63,9 @@ if __name__ == '__main__':
             masks.append(pred.mean(axis=0))
 
     mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
-    # vocal_pred = X * (1 - mask) * coeff
-    # mask = spec_utils.mask_uninformative(mask, vocal_pred)
+    if args.postprocess:
+        vocal_pred = X * (1 - mask) * coeff
+        mask = spec_utils.mask_uninformative(mask, vocal_pred)
     inst_pred = X * mask * coeff
     vocal_pred = X * (1 - mask) * coeff
 
