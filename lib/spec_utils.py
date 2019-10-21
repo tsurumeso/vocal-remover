@@ -19,9 +19,11 @@ def crop_and_concat(h1, h2, concat=True):
 
 def calc_spec(X, hop_length, phase=False):
     n_fft = (hop_length - 1) * 2
-    spec_left = librosa.stft(X[0], n_fft, hop_length=hop_length)
-    spec_right = librosa.stft(X[1], n_fft, hop_length=hop_length)
-    spec = np.asarray([spec_left, spec_right])
+    audio_left = np.asfortranarray(X[0])
+    audio_right = np.asfortranarray(X[1])
+    spec_left = librosa.stft(audio_left, n_fft, hop_length=hop_length)
+    spec_right = librosa.stft(audio_right, n_fft, hop_length=hop_length)
+    spec = np.asfortranarray([spec_left, spec_right])
 
     if phase:
         mag = np.abs(spec)
@@ -109,7 +111,9 @@ def cache_or_load(mix_path, inst_path, sr, hop_length):
 
 def spec_to_wav(mag, phase, hop_length):
     spec = mag * phase
-    wav_left = librosa.istft(spec[0], hop_length=hop_length)
-    wav_right = librosa.istft(spec[1], hop_length=hop_length)
-    wav = np.asarray([wav_left, wav_right])
+    spec_left = np.asfortranarray(spec[0])
+    spec_right = np.asfortranarray(spec[1])
+    wav_left = librosa.istft(spec_left, hop_length=hop_length)
+    wav_right = librosa.istft(spec_right, hop_length=hop_length)
+    wav = np.asfortranarray([wav_left, wav_right])
     return wav
