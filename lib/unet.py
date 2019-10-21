@@ -33,7 +33,7 @@ class Conv2DBNActiv(chainer.Chain):
 class ConvBlock(chainer.Chain):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 activ=F.leaky_relu, r=16, scse=False):
+                 activ=F.leaky_relu, r=16, att=False):
         super(ConvBlock, self).__init__()
         with self.init_scope():
             self.conv1 = Conv2DBNActiv(
@@ -41,25 +41,24 @@ class ConvBlock(chainer.Chain):
             self.conv2 = Conv2DBNActiv(
                 out_channels, out_channels, ksize, stride, pad, activ=activ)
 
-            if scse:
-                self.conv_sc = L.Convolution2D(None, 1, 1)
-                self.fc1 = L.Linear(out_channels, out_channels // r)
-                self.fc2 = L.Linear(out_channels // r, out_channels)
+            if att:
+                self.att_conv = L.Convolution2D(None, 1, 1)
+                self.sqz = L.Linear(out_channels, out_channels // r)
+                self.ext = L.Linear(out_channels // r, out_channels)
 
-        self.scse = scse
+        self.att = att
 
     def __call__(self, x):
-        h1 = self.conv1(x)
-        h2 = self.conv2(h1)
+        h_skip = self.conv1(x)
+        h = self.conv2(h_skip)
 
-        if self.scse:
-            sc = F.sigmoid(self.conv_sc(h2))
-            se = F.relu(self.fc1(F.average(h2, axis=(2, 3))))
-            se = F.sigmoid(self.fc2(se))[:, :, None, None]
-            se = F.broadcast_to(se, h2.shape)
-            h2 = h2 * sc + h2 * se
+        if self.att:
+            sc = F.sigmoid(self.att_conv(h))
+            se = F.relu(self.sqz(F.average(h, axis=(2, 3))))
+            se = F.sigmoid(self.ext(se))[:, :, None, None]
+            h = h * sc + h * se
 
-        return h2, h1
+        return h, h_skip
 
 
 class BaseUNet(chainer.Chain):
