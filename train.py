@@ -35,6 +35,7 @@ p.add_argument('--oracle_rate', '-O', type=float, default=0)
 p.add_argument('--oracle_drop_rate', '-o', type=float, default=0.5)
 p.add_argument('--mixup', '-M', action='store_true')
 p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
+p.add_argument('--pretrained_model', '-P', type=str, default=None)
 args = p.parse_args()
 
 
@@ -47,6 +48,8 @@ if __name__ == '__main__':
     chainer.global_config.autotune = True
 
     model = unet.MultiBandUNet()
+    if args.pretrained_model is not None:
+        chainer.serializers.load_npz(args.pretrained_model, model)
     if args.gpu >= 0:
         chainer.backends.cuda.check_cuda_available()
         chainer.backends.cuda.get_device(args.gpu).use()
