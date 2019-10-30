@@ -82,9 +82,10 @@ def align_wave_head_and_tail(a, b, sr):
 
 
 def cache_or_load(mix_path, inst_path, sr, hop_length):
-    _, ext = os.path.splitext(mix_path)
-    spec_mix_path = mix_path.replace(ext, '.npy')
-    spec_inst_path = inst_path.replace(ext, '.npy')
+    _, mix_ext = os.path.splitext(mix_path)
+    _, inst_ext = os.path.splitext(inst_path)
+    spec_mix_path = mix_path.replace(mix_ext, '.npy')
+    spec_inst_path = inst_path.replace(inst_ext, '.npy')
 
     if os.path.exists(spec_mix_path) and os.path.exists(spec_inst_path):
         X = np.load(spec_mix_path)
