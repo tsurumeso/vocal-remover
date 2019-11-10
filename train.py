@@ -1,6 +1,7 @@
 import argparse
 from datetime import datetime as dt
 import gc
+import json
 import os
 import random
 
@@ -27,6 +28,7 @@ p.add_argument('--lr_decay', type=float, default=0.9)
 p.add_argument('--lr_decay_interval', type=int, default=6)
 p.add_argument('--batchsize', '-B', type=int, default=8)
 p.add_argument('--val_batchsize', '-b', type=int, default=16)
+p.add_argument('--val_filelist', '-V', type=str, default=None)
 p.add_argument('--cropsize', '-c', type=int, default=448)
 p.add_argument('--patches', '-p', type=int, default=16)
 p.add_argument('--epoch', '-E', type=int, default=100)
@@ -70,21 +72,32 @@ if __name__ == '__main__':
          if os.path.splitext(fname)[1] in input_exts])
     filelist = list(zip(X_list, y_list))
 
+    val_filelist = []
+    if args.val_filelist is not None:
+        with open(args.val_filelist, 'r', encoding='utf8') as f:
+            val_filelist = json.load(f)
+
     random.shuffle(filelist)
-    val_size = int(len(filelist) * args.validation_rate)
-    train_filelist = filelist[:-val_size]
-    valid_filelist = filelist[-val_size:]
+    if len(val_filelist) == 0:
+        val_size = int(len(filelist) * args.validation_rate)
+        train_filelist = filelist[:-val_size]
+        val_filelist = filelist[-val_size:]
+        with open('val.json', 'w', encoding='utf8') as f:
+            json.dump(val_filelist, f, ensure_ascii=False)
+    else:
+        train_filelist = [
+            pair for pair in filelist
+            if list(pair) not in val_filelist]
 
-    for X_fname, y_fname in valid_filelist:
-        print(os.path.basename(X_fname), os.path.basename(y_fname))
+    for i, (X_fname, y_fname) in enumerate(val_filelist):
+        print(i + 1, os.path.basename(X_fname), os.path.basename(y_fname))
 
-    X_valid, y_valid = dataset.create_dataset(
-        filelist=valid_filelist,
+    X_valid, y_valid = dataset.create_validation_set(
+        filelist=val_filelist,
         cropsize=args.cropsize,
-        patches=48,
         sr=args.sr,
         hop_length=args.hop_length,
-        validation=True)
+        offset=model.offset)
 
     log = []
     oracle_X = None
@@ -93,7 +106,7 @@ if __name__ == '__main__':
     best_loss = np.inf
     logname = dt.now().strftime('%Y%m%d%H%M%S.npy')
     for epoch in range(args.epoch):
-        X_train, y_train = dataset.create_dataset(
+        X_train, y_train = dataset.create_training_set(
             filelist=train_filelist,
             cropsize=args.cropsize,
             patches=args.patches,

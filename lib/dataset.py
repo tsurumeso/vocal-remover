@@ -26,8 +26,7 @@ def get_oracle_data(X, y, instance_loss, oracle_rate, oracle_drop_rate):
     return oracle_X, oracle_y, idx
 
 
-def create_dataset(filelist, cropsize, patches, sr, hop_length,
-                   validation=False):
+def create_training_set(filelist, cropsize, patches, sr, hop_length):
     len_dataset = patches * len(filelist)
     X_dataset = np.zeros(
         (len_dataset, 2, hop_length, cropsize), dtype=np.float32)
@@ -40,22 +39,28 @@ def create_dataset(filelist, cropsize, patches, sr, hop_length,
             start = np.random.randint(0, X.shape[2] - cropsize)
             X_dataset[idx] = X[:, :, start:start + cropsize]
             y_dataset[idx] = y[:, :, start:start + cropsize]
-            if not validation:
-                if np.random.uniform() < 0.5:
-                    # swap channel
-                    X_dataset[idx] = X_dataset[idx, ::-1]
-                    y_dataset[idx] = y_dataset[idx, ::-1]
-                # if np.random.uniform() < 0.5:
-                #     # spec aug
-                #     f = np.random.randint(0, hop_length // 4)
-                #     f0 = np.random.randint(0, hop_length - f)
-                #     X_dataset[idx, :, f0:f0 + f, :] = 0
-                #     y_dataset[idx, :, f0:f0 + f, :] = 0
-                # if np.random.uniform() < 0.5:
-                #     # spec aug
-                #     t = np.random.randint(0, hop_length // 8)
-                #     t0 = np.random.randint(0, cropsize - t)
-                #     X_dataset[idx, :, :, t0:t0 + t] = 0
-                #     y_dataset[idx, :, :, t0:t0 + t] = 0
+            if np.random.uniform() < 0.5:
+                # swap channel
+                X_dataset[idx] = X_dataset[idx, ::-1]
+                y_dataset[idx] = y_dataset[idx, ::-1]
 
     return X_dataset, y_dataset
+
+
+def create_validation_set(filelist, cropsize, sr, hop_length, offset):
+    X_dataset = []
+    y_dataset = []
+    for i, (X_path, y_path) in enumerate(tqdm(filelist)):
+        X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length)
+        left = offset
+        roi_size = cropsize - offset
+        right = roi_size - (X.shape[2] % roi_size)
+        X = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
+        y = np.pad(y, ((0, 0), (0, 0), (left, right)), mode='reflect')
+        len_dataset = int(X.shape[2] / roi_size)
+        for j in range(len_dataset):
+            start = j * roi_size
+            X_dataset.append(X[:, :, start:start + cropsize])
+            y_dataset.append(y[:, :, start:start + cropsize])
+
+    return np.float32(X_dataset), np.float32(y_dataset)

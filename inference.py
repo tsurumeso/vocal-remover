@@ -47,7 +47,7 @@ if __name__ == '__main__':
 
     left = model.offset
     roi_size = args.window_size - left * 2
-    right = roi_size + left - (X.shape[2] % left)
+    right = roi_size - (X.shape[2] % roi_size) + left
     X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
 
     masks = []
