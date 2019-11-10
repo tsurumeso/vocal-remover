@@ -32,21 +32,17 @@ class CBAM(chainer.Chain):
 class Conv2DBNActiv(chainer.Chain):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 dropout=False, activ=F.relu):
+                 activ=F.relu):
         super(Conv2DBNActiv, self).__init__()
         with self.init_scope():
             self.conv = L.Convolution2D(
                 in_channels, out_channels, ksize, stride, pad, nobias=True)
             self.bn = L.BatchNormalization(out_channels)
 
-        self.dropout = dropout
         self.activ = activ
 
     def __call__(self, x):
         h = self.bn(self.conv(x))
-
-        if self.dropout:
-            h = F.dropout(h)
 
         if self.activ is not None:
             h = self.activ(h)
@@ -57,40 +53,47 @@ class Conv2DBNActiv(chainer.Chain):
 class Encoder(chainer.Chain):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 activ=F.leaky_relu, r=16, cbam=False):
+                 activ=F.leaky_relu, cbam=False):
         super(Encoder, self).__init__()
         with self.init_scope():
             self.conv1 = Conv2DBNActiv(
                 in_channels, out_channels, ksize, 1, pad, activ=activ)
             self.conv2 = Conv2DBNActiv(
                 out_channels, out_channels, ksize, stride, pad, activ=activ)
-
-            self.cbam = CBAM(out_channels, r) if cbam else None
+            self.cbam = CBAM(out_channels) if cbam else None
 
     def __call__(self, x):
-        h_skip = self.conv1(x)
-        h = self.conv2(h_skip)
+        skip = self.conv1(x)
+        h = self.conv2(skip)
 
         if self.cbam is not None:
             h = self.cbam(h)
 
-        return h, h_skip
+        return h, skip
 
 
 class Decoder(chainer.Chain):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
-                 dropout=False):
+                 cbam=False, dropout=False):
         super(Decoder, self).__init__()
         with self.init_scope():
-            self.conv = Conv2DBNActiv(
-                in_channels, out_channels, ksize, 1, pad, dropout=dropout)
+            self.conv = Conv2DBNActiv(in_channels, out_channels, ksize, 1, pad)
+            self.cbam = CBAM(out_channels) if cbam else None
+
+        self.dropout = dropout
 
     def __call__(self, x, skip=None):
         x = F.resize_images(x, (x.shape[2] * 2, x.shape[3] * 2))
         if skip is not None:
             x = spec_utils.crop_and_concat(x, skip)
         h = self.conv(x)
+
+        if self.cbam is not None:
+            h = self.cbam(h)
+
+        if self.dropout:
+            h = F.dropout(h)
 
         return h
 
@@ -100,12 +103,12 @@ class BaseUNet(chainer.Chain):
     def __init__(self, ch, pad):
         super(BaseUNet, self).__init__()
         with self.init_scope():
-            self.enc1 = Encoder(None, ch, 3, 2, pad, cbam=False)
-            self.enc2 = Encoder(None, ch * 2, 3, 2, pad, cbam=True)
-            self.enc3 = Encoder(None, ch * 4, 3, 2, pad, cbam=True)
-            self.enc4 = Encoder(None, ch * 8, 3, 2, pad, cbam=True)
-            self.enc5 = Encoder(None, ch * 16, 3, 2, pad, cbam=True)
-            self.enc6 = Encoder(None, ch * 32, 3, 2, pad, cbam=True)
+            self.enc1 = Encoder(None, ch, 3, 2, pad)
+            self.enc2 = Encoder(None, ch * 2, 3, 2, pad)
+            self.enc3 = Encoder(None, ch * 4, 3, 2, pad)
+            self.enc4 = Encoder(None, ch * 8, 3, 2, pad)
+            self.enc5 = Encoder(None, ch * 16, 3, 2, pad)
+            self.enc6 = Encoder(None, ch * 32, 3, 2, pad)
 
             self.dec6 = Decoder(None, ch * 32, 3, 1, pad, dropout=True)
             self.dec5 = Decoder(None, ch * 16, 3, 1, pad, dropout=True)
@@ -149,10 +152,11 @@ class MultiBandUNet(chainer.Chain):
     def __call__(self, x):
         bandw = x.shape[2] // 2
         diff = (x[:, 0] - x[:, 1])[:, None]
-        x = self.xp.concatenate([x, diff], axis=1)
         x_l, x_h = x[:, :, :bandw], x[:, :, bandw:]
         h1 = self.l_band_unet(x_l)
         h2 = self.h_band_unet(x_h)
+
+        x = self.xp.concatenate([x, diff], axis=1)
         h = self.full_band_unet(x)
 
         h = self.conv(F.concat([h, F.concat([h1, h2], axis=2)]))
