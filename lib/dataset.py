@@ -53,14 +53,14 @@ def create_validation_set(filelist, cropsize, sr, hop_length, offset):
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length)
         left = offset
-        roi_size = cropsize - offset
-        right = roi_size - (X.shape[2] % roi_size)
-        X = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
-        y = np.pad(y, ((0, 0), (0, 0), (left, right)), mode='reflect')
-        len_dataset = int(X.shape[2] / roi_size)
+        roi_size = cropsize - offset * 2
+        right = roi_size - (X.shape[2] % roi_size) + offset
+        X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
+        y_pad = np.pad(y, ((0, 0), (0, 0), (left, right)), mode='reflect')
+        len_dataset = int(np.ceil(X.shape[2] / roi_size))
         for j in range(len_dataset):
             start = j * roi_size
-            X_dataset.append(X[:, :, start:start + cropsize])
-            y_dataset.append(y[:, :, start:start + cropsize])
+            X_dataset.append(X_pad[:, :, start:start + cropsize])
+            y_dataset.append(y_pad[:, :, start:start + cropsize])
 
     return np.float32(X_dataset), np.float32(y_dataset)

@@ -27,9 +27,10 @@ p.add_argument('--lr_min', type=float, default=0.0001)
 p.add_argument('--lr_decay', type=float, default=0.9)
 p.add_argument('--lr_decay_interval', type=int, default=6)
 p.add_argument('--batchsize', '-B', type=int, default=8)
-p.add_argument('--val_batchsize', '-b', type=int, default=16)
+p.add_argument('--val_batchsize', '-b', type=int, default=8)
 p.add_argument('--val_filelist', '-V', type=str, default=None)
 p.add_argument('--cropsize', '-c', type=int, default=448)
+p.add_argument('--val_cropsize', '-C', type=int, default=896)
 p.add_argument('--patches', '-p', type=int, default=16)
 p.add_argument('--epoch', '-E', type=int, default=100)
 p.add_argument('--inner_epoch', '-e', type=int, default=4)
@@ -48,6 +49,7 @@ if __name__ == '__main__':
         chainer.backends.cuda.cupy.random.seed(args.seed)
         chainer.backends.cuda.set_max_workspace_size(512 * 1024 * 1024)
     chainer.global_config.autotune = True
+    timestamp = dt.now().strftime('%Y%m%d%H%M%S')
 
     model = unet.MultiBandUNet()
     if args.pretrained_model is not None:
@@ -82,7 +84,7 @@ if __name__ == '__main__':
         val_size = int(len(filelist) * args.validation_rate)
         train_filelist = filelist[:-val_size]
         val_filelist = filelist[-val_size:]
-        with open('val.json', 'w', encoding='utf8') as f:
+        with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
             json.dump(val_filelist, f, ensure_ascii=False)
     else:
         train_filelist = [
@@ -94,7 +96,7 @@ if __name__ == '__main__':
 
     X_valid, y_valid = dataset.create_validation_set(
         filelist=val_filelist,
-        cropsize=args.cropsize,
+        cropsize=args.val_cropsize,
         sr=args.sr,
         hop_length=args.hop_length,
         offset=model.offset)
@@ -104,7 +106,6 @@ if __name__ == '__main__':
     oracle_y = None
     best_count = 0
     best_loss = np.inf
-    logname = dt.now().strftime('%Y%m%d%H%M%S.npy')
     for epoch in range(args.epoch):
         X_train, y_train = dataset.create_training_set(
             filelist=train_filelist,
@@ -168,7 +169,7 @@ if __name__ == '__main__':
                   .format(train_loss * 1000, valid_loss * 1000))
 
             log.append([train_loss, valid_loss])
-            np.save(logname, np.asarray(log))
+            np.save('log_{}.npy'.format(timestamp), np.asarray(log))
 
             if valid_loss < best_loss:
                 best_count = 0
