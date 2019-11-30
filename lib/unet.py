@@ -150,9 +150,11 @@ class MultiBandUNet(chainer.Chain):
         self.offset = 160
 
     def __call__(self, x):
-        bandw = x.shape[2] // 2
         diff = (x[:, 0] - x[:, 1])[:, None]
-        x_l, x_h = x[:, :, :bandw], x[:, :, bandw:]
+        bandw = x.shape[2] // 2
+        x_l = x[:, :, :bandw]
+        x_h = x[:, :, bandw:]
+
         h1 = self.l_band_unet(x_l)
         h2 = self.h_band_unet(x_h)
 
