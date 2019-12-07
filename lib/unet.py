@@ -1,43 +1,41 @@
-import chainer
-import chainer.functions as F
-import chainer.links as L
+import torch
+from torch import nn
+import torch.nn.functional as F
 
 from lib import spec_utils
 
 
-class CBAM(chainer.Chain):
+class CBAM(nn.Module):
 
     def __init__(self, ch, ratio=16):
         super(CBAM, self).__init__()
-        with self.init_scope():
-            self.sqz = L.Linear(ch, ch // ratio)
-            self.ext = L.Linear(ch // ratio, ch)
-            self.conv = L.Convolution2D(None, 1, 3, 1, 1, nobias=True)
+        self.sqz = nn.Linear(ch, ch // ratio)
+        self.ext = nn.Linear(ch // ratio, ch)
+        self.conv = nn.Conv2d(None, 1, 3, 1, 1, bias=False)
 
     def __call__(self, x, e=None):
-        gap = F.average(x, axis=(2, 3))
-        gmp = F.max(x, axis=(2, 3))
+        gap = x.mean(dim=(2, 3))
+        gmp = x.max(x, axis=(2, 3))
         gap = self.ext(F.relu(self.sqz(gap)))
         gmp = self.ext(F.relu(self.sqz(gmp)))
         x = F.sigmoid(gap + gmp)[:, :, None, None] * x
 
-        gap = F.average(x, axis=1)[:, None]
-        gmp = F.max(x, axis=1)[:, None]
-        h = self.conv(F.concat([gap, gmp]))
+        gap = x.mean(dim=1)[:, None]
+        gmp = x.max(dim=1)[:, None]
+        h = self.conv(torch.cat([gap, gmp], dim=1))
         h = F.sigmoid(h) * x
 
         return h
 
 
-class Conv2DBNActiv(chainer.Chain):
+class Conv2DBNActiv(nn.Module):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
                  activ=F.relu):
         super(Conv2DBNActiv, self).__init__()
-        with self.init_scope():
-            self.conv = L.Convolution2D(
-                in_channels, out_channels, ksize, stride, pad, nobias=True)
-            self.bn = L.BatchNormalization(out_channels)
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, ksize, stride, pad, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
 
         self.activ = activ
 
@@ -50,17 +48,16 @@ class Conv2DBNActiv(chainer.Chain):
         return h
 
 
-class Encoder(chainer.Chain):
+class Encoder(nn.Module):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
                  activ=F.leaky_relu, cbam=False):
         super(Encoder, self).__init__()
-        with self.init_scope():
-            self.conv1 = Conv2DBNActiv(
-                in_channels, out_channels, ksize, 1, pad, activ=activ)
-            self.conv2 = Conv2DBNActiv(
-                out_channels, out_channels, ksize, stride, pad, activ=activ)
-            self.cbam = CBAM(out_channels) if cbam else None
+        self.conv1 = Conv2DBNActiv(
+            in_channels, out_channels, ksize, 1, pad, activ=activ)
+        self.conv2 = Conv2DBNActiv(
+            out_channels, out_channels, ksize, stride, pad, activ=activ)
+        self.cbam = CBAM(out_channels) if cbam else None
 
     def __call__(self, x):
         skip = self.conv1(x)
@@ -72,19 +69,18 @@ class Encoder(chainer.Chain):
         return h, skip
 
 
-class Decoder(chainer.Chain):
+class Decoder(nn.Module):
 
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
                  cbam=False, dropout=False):
         super(Decoder, self).__init__()
-        with self.init_scope():
-            self.conv = Conv2DBNActiv(in_channels, out_channels, ksize, 1, pad)
-            self.cbam = CBAM(out_channels) if cbam else None
+        self.conv = Conv2DBNActiv(in_channels, out_channels, ksize, 1, pad)
+        self.cbam = CBAM(out_channels) if cbam else None
 
         self.dropout = dropout
 
     def __call__(self, x, skip=None):
-        x = F.resize_images(x, (x.shape[2] * 2, x.shape[3] * 2))
+        x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         if skip is not None:
             x = spec_utils.crop_and_concat(x, skip)
         h = self.conv(x)
@@ -98,24 +94,23 @@ class Decoder(chainer.Chain):
         return h
 
 
-class BaseUNet(chainer.Chain):
+class BaseUNet(nn.Module):
 
-    def __init__(self, ch, pad):
+    def __init__(self, in_channels, ch, pad):
         super(BaseUNet, self).__init__()
-        with self.init_scope():
-            self.enc1 = Encoder(None, ch, 3, 2, pad)
-            self.enc2 = Encoder(None, ch * 2, 3, 2, pad)
-            self.enc3 = Encoder(None, ch * 4, 3, 2, pad)
-            self.enc4 = Encoder(None, ch * 8, 3, 2, pad)
-            self.enc5 = Encoder(None, ch * 16, 3, 2, pad)
-            self.enc6 = Encoder(None, ch * 32, 3, 2, pad)
+        self.enc1 = Encoder(in_channels, ch, 3, 2, pad)
+        self.enc2 = Encoder(ch, ch * 2, 3, 2, pad)
+        self.enc3 = Encoder(ch * 2, ch * 4, 3, 2, pad)
+        self.enc4 = Encoder(ch * 4, ch * 8, 3, 2, pad)
+        self.enc5 = Encoder(ch * 8, ch * 16, 3, 2, pad)
+        self.enc6 = Encoder(ch * 16, ch * 32, 3, 2, pad)
 
-            self.dec6 = Decoder(None, ch * 32, 3, 1, pad, dropout=True)
-            self.dec5 = Decoder(None, ch * 16, 3, 1, pad, dropout=True)
-            self.dec4 = Decoder(None, ch * 8, 3, 1, pad, dropout=True)
-            self.dec3 = Decoder(None, ch * 4, 3, 1, pad)
-            self.dec2 = Decoder(None, ch * 2, 3, 1, pad)
-            self.dec1 = Decoder(None, ch, 3, 1, pad)
+        self.dec6 = Decoder(ch * (32 + 32), ch * 32, 3, 1, pad, dropout=True)
+        self.dec5 = Decoder(ch * (16 + 32), ch * 16, 3, 1, pad, dropout=True)
+        self.dec4 = Decoder(ch * (8 + 16), ch * 8, 3, 1, pad, dropout=True)
+        self.dec3 = Decoder(ch * (4 + 8), ch * 4, 3, 1, pad)
+        self.dec2 = Decoder(ch * (2 + 4), ch * 2, 3, 1, pad)
+        self.dec1 = Decoder(ch * (1 + 2), ch, 3, 1, pad)
 
     def __call__(self, x):
         h, e1 = self.enc1(x)
@@ -135,33 +130,32 @@ class BaseUNet(chainer.Chain):
         return h
 
 
-class MultiBandUNet(chainer.Chain):
+class MultiBandUNet(nn.Module):
 
     def __init__(self, pad=(1, 0)):
         super(MultiBandUNet, self).__init__()
-        with self.init_scope():
-            self.l_band_unet = BaseUNet(16, pad=pad)
-            self.h_band_unet = BaseUNet(16, pad=pad)
-            self.full_band_unet = BaseUNet(8, pad=pad)
+        self.l_band_unet = BaseUNet(2, 16, pad=pad)
+        self.h_band_unet = BaseUNet(2, 16, pad=pad)
+        self.full_band_unet = BaseUNet(3, 8, pad=pad)
 
-            self.conv = Conv2DBNActiv(None, 16, 3, pad=pad)
-            self.out = L.Convolution2D(None, 2, 1, nobias=True)
+        self.conv = Conv2DBNActiv(16 + 8, 16, 3, pad=pad)
+        self.out = nn.Conv2d(16, 2, 1, bias=False)
 
         self.offset = 160
 
     def __call__(self, x):
         diff = (x[:, 0] - x[:, 1])[:, None]
-        bandw = x.shape[2] // 2
+        bandw = x.size()[2] // 2
         x_l = x[:, :, :bandw]
         x_h = x[:, :, bandw:]
 
         h1 = self.l_band_unet(x_l)
         h2 = self.h_band_unet(x_h)
 
-        x = self.xp.concatenate([x, diff], axis=1)
+        x = torch.cat([x, diff], dim=1)
         h = self.full_band_unet(x)
 
-        h = self.conv(F.concat([h, F.concat([h1, h2], axis=2)]))
-        h = F.sigmoid(self.out(h))
+        h = self.conv(torch.cat([h, torch.cat([h1, h2], dim=2)], dim=1))
+        h = torch.sigmoid(self.out(h))
 
         return h

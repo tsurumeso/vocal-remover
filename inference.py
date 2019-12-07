@@ -1,7 +1,6 @@
 import argparse
 
-import chainer
-from chainer import backends
+import torch
 import cv2
 import librosa
 import numpy as np
@@ -25,12 +24,9 @@ def main():
 
     print('loading model...', end=' ')
     model = unet.MultiBandUNet()
-    chainer.serializers.load_npz(args.model, model)
+    model.load_state_dict(torch.load(args.model))
     if args.gpu >= 0:
-        chainer.backends.cuda.check_cuda_available()
-        chainer.backends.cuda.get_device(args.gpu).use()
-        model.to_gpu()
-    xp = model.xp
+        model.cuda()
     print('done')
 
     print('loading wave source...', end=' ')
@@ -50,14 +46,15 @@ def main():
     X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
 
     masks = []
-    with chainer.no_backprop_mode(), chainer.using_config('train', False):
+    model.eval()
+    with torch.no_grad():
         for j in tqdm(range(int(np.ceil(X.shape[2] / roi_size)))):
             start = j * roi_size
             X_window = X_pad[None, :, :, start:start + args.window_size]
             X_tta = np.concatenate([X_window, X_window[:, ::-1, :, :]])
 
-            pred = model(xp.asarray(X_tta))
-            pred = backends.cuda.to_cpu(pred.data)
+            pred = model(torch.from_numpy(X_tta).cuda())
+            pred = pred.detach().cpu().numpy()
             pred[1] = pred[1, ::-1, :, :]
             masks.append(pred.mean(axis=0))
 

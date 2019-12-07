@@ -1,18 +1,18 @@
 import os
 
-import chainer.functions as F
 import librosa
 import numpy as np
+import torch
 
 
 def crop_and_concat(h1, h2, concat=True):
     # s_freq = (h2.shape[2] - h1.shape[2]) // 2
     # e_freq = s_freq + h1.shape[2]
-    s_time = (h2.shape[3] - h1.shape[3]) // 2
-    e_time = s_time + h1.shape[3]
+    s_time = (h2.size()[3] - h1.size()[3]) // 2
+    e_time = s_time + h1.size()[3]
     h2 = h2[:, :, :, s_time:e_time]
     if concat:
-        return F.concat([h1, h2])
+        return torch.cat([h1, h2], dim=1)
     else:
         return h2
 

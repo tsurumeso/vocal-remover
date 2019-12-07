@@ -5,9 +5,9 @@ import json
 import os
 import random
 
-import chainer
-import chainer.functions as F
 import numpy as np
+import torch
+import torch.nn as nn
 
 from lib import dataset
 from lib import spec_utils
@@ -47,44 +47,46 @@ def train_val_split(mix_dir, inst_dir, val_rate, val_filelist_json):
 
 def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
     sum_loss = 0
-    xp = model.xp
+    model.train()
+    criterion = nn.L1Loss(reduction='none')
     perm = np.random.permutation(len(X_train))
     for i in range(0, len(X_train), bs):
         local_perm = perm[i: i + bs]
-        X_batch = xp.asarray(X_train[local_perm])
-        y_batch = xp.asarray(y_train[local_perm])
+        X_batch = torch.from_numpy(X_train[local_perm]).cuda()
+        y_batch = torch.from_numpy(y_train[local_perm]).cuda()
 
-        model.cleargrads()
+        model.zero_grad()
         mask = model(X_batch)
         X_batch = spec_utils.crop_and_concat(mask, X_batch, False)
         y_batch = spec_utils.crop_and_concat(mask, y_batch, False)
 
-        abs_diff = F.absolute_error(X_batch * mask, y_batch)
-        loss = F.mean(abs_diff)
+        abs_diff = criterion(X_batch * mask, y_batch)
+        loss = abs_diff.mean()
         loss.backward()
-        optimizer.update()
+        optimizer.step()
 
-        instance_loss[local_perm] += chainer.backends.cuda.to_cpu(
-            abs_diff.data.mean(axis=(1, 2, 3)))
-        sum_loss += float(loss.data) * len(X_batch)
+        abs_diff_np = abs_diff.detach().cpu().numpy()
+        instance_loss[local_perm] += abs_diff_np.mean(axis=(1, 2, 3))
+        sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
 
     return sum_loss / len(X_train)
 
 
 def valid_inner_epoch(X_valid, y_valid, model, bs):
     sum_loss = 0
-    xp = model.xp
-    with chainer.no_backprop_mode(), chainer.using_config('train', False):
+    model.eval()
+    criterion = nn.L1Loss()
+    with torch.no_grad():
         for i in range(0, len(X_valid), bs):
-            X_batch = xp.asarray(X_valid[i: i + bs])
-            y_batch = xp.asarray(y_valid[i: i + bs])
+            X_batch = torch.from_numpy(X_valid[i: i + bs]).cuda()
+            y_batch = torch.from_numpy(y_valid[i: i + bs]).cuda()
 
             mask = model(X_batch)
             X_batch = spec_utils.crop_and_concat(mask, X_batch, False)
             y_batch = spec_utils.crop_and_concat(mask, y_batch, False)
 
-            loss = F.mean_absolute_error(X_batch * mask, y_batch)
-            sum_loss += float(loss.data) * len(X_batch)
+            loss = criterion(X_batch * mask, y_batch)
+            sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
 
     return sum_loss / len(X_valid)
 
@@ -100,8 +102,8 @@ def main():
     p.add_argument('--validation_rate', '-v', type=float, default=0.1)
     p.add_argument('--learning_rate', type=float, default=0.001)
     p.add_argument('--lr_min', type=float, default=0.0001)
-    p.add_argument('--lr_decay', type=float, default=0.9)
-    p.add_argument('--lr_decay_interval', type=int, default=6)
+    p.add_argument('--lr_decay_factor', type=float, default=0.9)
+    p.add_argument('--lr_decay_patience', type=int, default=6)
     p.add_argument('--batchsize', '-B', type=int, default=8)
     p.add_argument('--val_batchsize', '-b', type=int, default=8)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
@@ -119,22 +121,22 @@ def main():
 
     random.seed(args.seed)
     np.random.seed(args.seed)
-    if chainer.backends.cuda.available:
-        chainer.backends.cuda.cupy.random.seed(args.seed)
-        chainer.backends.cuda.set_max_workspace_size(512 * 1024 * 1024)
-    chainer.global_config.autotune = True
+    torch.manual_seed(args.seed)
     timestamp = dt.now().strftime('%Y%m%d%H%M%S')
 
     model = unet.MultiBandUNet()
     if args.pretrained_model is not None:
-        chainer.serializers.load_npz(args.pretrained_model, model)
+        model.load_state_dict(torch.load(args.pretrained_model))
     if args.gpu >= 0:
-        chainer.backends.cuda.check_cuda_available()
-        chainer.backends.cuda.get_device(args.gpu).use()
-        model.to_gpu()
+        model.cuda()
 
-    optimizer = chainer.optimizers.Adam(args.learning_rate)
-    optimizer.setup(model)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        factor=args.lr_decay_factor,
+        patience=args.lr_decay_patience,
+        min_lr=args.lr_min,
+        verbose=True)
 
     train_filelist, val_filelist = train_val_split(
         mix_dir=args.mixture_dataset,
@@ -154,7 +156,6 @@ def main():
     log = []
     oracle_X = None
     oracle_y = None
-    best_count = 0
     best_loss = np.inf
     for epoch in range(args.epoch):
         X_train, y_train = dataset.make_training_set(
@@ -181,22 +182,16 @@ def main():
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
                   .format(train_loss * 1000, valid_loss * 1000))
 
-            log.append([train_loss, valid_loss])
-            np.save('log_{}.npy'.format(timestamp), np.asarray(log))
+            scheduler.step(valid_loss)
 
-            best_count += 1
             if valid_loss < best_loss:
-                best_count = 0
                 best_loss = valid_loss
                 print('    * best validation loss')
-                model_path = 'models/model_iter{}.npz'.format(epoch)
-                chainer.serializers.save_npz(model_path, model)
+                model_path = 'models/model_iter{}.pth'.format(epoch)
+                torch.save(model.state_dict(), model_path)
 
-            if epoch > 1 and best_count >= args.lr_decay_interval:
-                best_count = 0
-                optimizer.alpha *= args.lr_decay
-                optimizer.alpha = max(optimizer.alpha, args.lr_min)
-                print('    * learning rate decay: {:.6f}'.format(optimizer.alpha))
+            log.append([train_loss, valid_loss])
+            np.save('log_{}.npy'.format(timestamp), np.asarray(log))
 
         if args.oracle_rate > 0:
             instance_loss /= args.inner_epoch
