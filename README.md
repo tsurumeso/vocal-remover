@@ -12,10 +12,6 @@ This is a deep-learning-based tool to extract instrumental track from mixture au
 pip install -r requirements.txt
 ```
 
-### Enable GPU support
-Install CuPy precompiled binary package which includes the latest version of cuDNN library.
-See: [CuPy Installation Guide](https://docs-cupy.chainer.org/en/stable/install.html#install-cupy)
-
 ### Getting vocal-remover
 Download the latest version from [here](https://github.com/tsurumeso/vocal-remover/releases).
 
