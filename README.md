@@ -1,5 +1,9 @@
 # vocal-remover
-This is a spectrogram based vocal seperation tool using deep neural networks.
+
+[![Release](https://img.shields.io/github/release/tsurumeso/vocal-remover.svg)](https://github.com/tsurumeso/vocal-remover/releases/latest)
+[![Release](https://img.shields.io/github/downloads/tsurumeso/vocal-remover/total.svg)](https://github.com/tsurumeso/vocal-remover/releases)
+
+This is a deep-learning-based tool to extract instrumental track from mixture audio.
 
 ## Installation
 

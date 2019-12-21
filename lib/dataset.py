@@ -26,7 +26,7 @@ def get_oracle_data(X, y, instance_loss, oracle_rate, oracle_drop_rate):
     return oracle_X, oracle_y, idx
 
 
-def create_training_set(filelist, cropsize, patches, sr, hop_length):
+def make_training_set(filelist, cropsize, patches, sr, hop_length):
     len_dataset = patches * len(filelist)
     X_dataset = np.zeros(
         (len_dataset, 2, hop_length, cropsize), dtype=np.float32)
@@ -47,7 +47,7 @@ def create_training_set(filelist, cropsize, patches, sr, hop_length):
     return X_dataset, y_dataset
 
 
-def create_validation_set(filelist, cropsize, sr, hop_length, offset):
+def make_validation_set(filelist, cropsize, offset, sr, hop_length):
     X_dataset = []
     y_dataset = []
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):

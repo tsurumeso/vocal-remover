@@ -118,3 +118,15 @@ def spec_to_wav(mag, phase, hop_length):
     wav_right = librosa.istft(spec_right, hop_length=hop_length)
     wav = np.asfortranarray([wav_left, wav_right])
     return wav
+
+
+if __name__ == "__main__":
+    import sys
+    X, _ = librosa.load(
+        sys.argv[1], 44100, False, dtype=np.float32, res_type='kaiser_fast')
+    y, _ = librosa.load(
+        sys.argv[2], 44100, False, dtype=np.float32, res_type='kaiser_fast')
+    X, _ = librosa.effects.trim(X)
+    y, _ = librosa.effects.trim(y)
+    X, y = align_wave_head_and_tail(X, y, 44100)
+    librosa.output.write_wav('test.wav', X - y, 44100)

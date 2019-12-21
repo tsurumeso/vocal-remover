@@ -11,19 +11,18 @@ from lib import spec_utils
 from lib import unet
 
 
-p = argparse.ArgumentParser()
-p.add_argument('--gpu', '-g', type=int, default=-1)
-p.add_argument('--model', '-m', type=str, default='models/baseline.npz')
-p.add_argument('--input', '-i', required=True)
-p.add_argument('--sr', '-r', type=int, default=44100)
-p.add_argument('--hop_length', '-l', type=int, default=1024)
-p.add_argument('--window_size', '-w', type=int, default=1024)
-p.add_argument('--out_mask', '-M', action='store_true')
-p.add_argument('--postprocess', '-p', action='store_true')
-args = p.parse_args()
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('--gpu', '-g', type=int, default=-1)
+    p.add_argument('--model', '-m', type=str, default='models/baseline.npz')
+    p.add_argument('--input', '-i', required=True)
+    p.add_argument('--sr', '-r', type=int, default=44100)
+    p.add_argument('--hop_length', '-l', type=int, default=1024)
+    p.add_argument('--window_size', '-w', type=int, default=1024)
+    p.add_argument('--out_mask', '-M', action='store_true')
+    p.add_argument('--postprocess', '-p', action='store_true')
+    args = p.parse_args()
 
-
-if __name__ == '__main__':
     print('loading model...', end=' ')
     model = unet.MultiBandUNet()
     chainer.serializers.load_npz(args.model, model)
@@ -83,3 +82,7 @@ if __name__ == '__main__':
     wav = spec_utils.spec_to_wav(vocal_pred, phase, args.hop_length)
     print('done')
     librosa.output.write_wav('vocal.wav', wav, sr)
+
+
+if __name__ == '__main__':
+    main()
