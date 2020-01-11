@@ -1,9 +1,9 @@
 import argparse
 
-import torch
 import cv2
 import librosa
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from lib import spec_utils
@@ -43,7 +43,7 @@ def main():
     left = model.offset
     roi_size = args.window_size - left * 2
     right = roi_size - (X.shape[2] % roi_size) + left
-    X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='reflect')
+    X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='constant')
 
     masks = []
     model.eval()
@@ -53,7 +53,7 @@ def main():
             X_window = X_pad[None, :, :, start:start + args.window_size]
             X_tta = np.concatenate([X_window, X_window[:, ::-1, :, :]])
 
-            pred = model(torch.from_numpy(X_tta).cuda())
+            pred, _ = model(torch.from_numpy(X_tta).cuda())
             pred = pred.detach().cpu().numpy()
             pred[1] = pred[1, ::-1, :, :]
             masks.append(pred.mean(axis=0))

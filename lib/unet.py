@@ -15,7 +15,7 @@ class CBAM(nn.Module):
 
     def __call__(self, x, e=None):
         gap = x.mean(dim=(2, 3))
-        gmp = x.max(x, axis=(2, 3))
+        gmp = x.max(x, dim=(2, 3))
         gap = self.ext(F.relu(self.sqz(gap)))
         gmp = self.ext(F.relu(self.sqz(gmp)))
         x = F.sigmoid(gap + gmp)[:, :, None, None] * x
@@ -82,7 +82,7 @@ class Decoder(nn.Module):
     def __call__(self, x, skip=None):
         x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         if skip is not None:
-            x = spec_utils.crop_and_concat(x, skip)
+            x = spec_utils.crop_center(x, skip)
         h = self.conv(x)
 
         if self.cbam is not None:
@@ -132,30 +132,32 @@ class BaseUNet(nn.Module):
 
 class MultiBandUNet(nn.Module):
 
-    def __init__(self, pad=(1, 0)):
+    def __init__(self):
         super(MultiBandUNet, self).__init__()
-        self.l_band_unet = BaseUNet(2, 16, pad=pad)
-        self.h_band_unet = BaseUNet(2, 16, pad=pad)
-        self.full_band_unet = BaseUNet(3, 8, pad=pad)
+        self.l_band_unet = BaseUNet(3, 8, pad=1)
+        self.h_band_unet = BaseUNet(3, 8, pad=1)
+        self.full_band_unet = BaseUNet(10, 16, pad=(1, 0))
 
-        self.conv = Conv2DBNActiv(16 + 8, 16, 3, pad=pad)
         self.out = nn.Conv2d(16, 2, 1, bias=False)
+        self.aux_out = nn.Conv2d(8, 2, 1, bias=False)
 
-        self.offset = 160
+        self.offset = 159
 
     def __call__(self, x):
         diff = (x[:, 0] - x[:, 1])[:, None]
-        bandw = x.size()[2] // 2
-        x_l = x[:, :, :bandw]
-        x_h = x[:, :, bandw:]
+        aux = torch.cat([x, diff], dim=1)
+        bandw = aux.size()[2] // 2
+        aux_l = aux[:, :, :bandw]
+        aux_h = aux[:, :, bandw:]
 
-        h1 = self.l_band_unet(x_l)
-        h2 = self.h_band_unet(x_h)
+        aux_l = self.l_band_unet(aux_l)
+        aux_h = self.h_band_unet(aux_h)
+        aux = torch.cat([aux_l, aux_h], dim=2)
 
-        x = torch.cat([x, diff], dim=1)
-        h = self.full_band_unet(x)
+        h = torch.cat([x, aux], dim=1)
+        h = self.full_band_unet(h)
 
-        h = self.conv(torch.cat([h, torch.cat([h1, h2], dim=2)], dim=1))
         h = torch.sigmoid(self.out(h))
+        aux = torch.sigmoid(self.aux_out(aux))
 
-        return h
+        return h, aux

@@ -48,6 +48,7 @@ def train_val_split(mix_dir, inst_dir, val_rate, val_filelist_json):
 def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
     sum_loss = 0
     model.train()
+    aux_crit = nn.L1Loss()
     criterion = nn.L1Loss(reduction='none')
     perm = np.random.permutation(len(X_train))
     for i in range(0, len(X_train), bs):
@@ -56,12 +57,14 @@ def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
         y_batch = torch.from_numpy(y_train[local_perm]).cuda()
 
         model.zero_grad()
-        mask = model(X_batch)
-        X_batch = spec_utils.crop_and_concat(mask, X_batch, False)
-        y_batch = spec_utils.crop_and_concat(mask, y_batch, False)
+        mask, aux = model(X_batch)
 
+        aux_loss = aux_crit(X_batch * aux, y_batch)
+        X_batch = spec_utils.crop_center(mask, X_batch, False)
+        y_batch = spec_utils.crop_center(mask, y_batch, False)
         abs_diff = criterion(X_batch * mask, y_batch)
-        loss = abs_diff.mean()
+
+        loss = abs_diff.mean() + aux_loss * 0.1
         loss.backward()
         optimizer.step()
 
@@ -81,9 +84,9 @@ def valid_inner_epoch(X_valid, y_valid, model, bs):
             X_batch = torch.from_numpy(X_valid[i: i + bs]).cuda()
             y_batch = torch.from_numpy(y_valid[i: i + bs]).cuda()
 
-            mask = model(X_batch)
-            X_batch = spec_utils.crop_and_concat(mask, X_batch, False)
-            y_batch = spec_utils.crop_and_concat(mask, y_batch, False)
+            mask, _ = model(X_batch)
+            X_batch = spec_utils.crop_center(mask, X_batch, False)
+            y_batch = spec_utils.crop_center(mask, y_batch, False)
 
             loss = criterion(X_batch * mask, y_batch)
             sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
