@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import cv2
 import librosa
@@ -70,15 +71,17 @@ def main():
         hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_MAGMA)
         cv2.imwrite('mask.png', hm)
 
+    org_name = os.path.splitext(os.path.basename(args.input))[0]
+
     print('instrumental inverse stft...', end=' ')
     wav = spec_utils.spec_to_wav(inst_pred, phase, args.hop_length)
     print('done')
-    librosa.output.write_wav('instrumental.wav', wav, sr)
+    librosa.output.write_wav('{}_Instrumental.wav'.format(org_name), wav, sr)
 
     print('vocal inverse stft...', end=' ')
     wav = spec_utils.spec_to_wav(vocal_pred, phase, args.hop_length)
     print('done')
-    librosa.output.write_wav('vocal.wav', wav, sr)
+    librosa.output.write_wav('{}_Vocal.wav'.format(org_name), wav, sr)
 
 
 if __name__ == '__main__':
