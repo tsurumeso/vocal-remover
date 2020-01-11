@@ -16,7 +16,7 @@ pip install -r requirements.txt
 Download the latest version from [here](https://github.com/tsurumeso/vocal-remover/releases).
 
 ## Usage
-Running the following code will split the mixture audio into an instrumental track and a vocal track. They are saved as `instrumental.wav` and `vocal.wav`.
+Running the following code will split the mixture audio into an instrumental track and a vocal track. These tracks are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
 
 ### Run on CPU
 ```
