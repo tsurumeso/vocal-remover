@@ -75,15 +75,14 @@ def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
     return sum_loss / len(X_train)
 
 
-def valid_inner_epoch(X_valid, y_valid, model, bs):
+def valid_inner_epoch(dataloader, model, bs):
     sum_loss = 0
     model.eval()
     criterion = nn.L1Loss()
     with torch.no_grad():
-        for i in range(0, len(X_valid), bs):
-            X_batch = torch.from_numpy(X_valid[i: i + bs]).cuda()
-            y_batch = torch.from_numpy(y_valid[i: i + bs]).cuda()
-
+        for X_batch, y_batch in dataloader:
+            X_batch = X_batch.cuda()
+            y_batch = y_batch.cuda()
             mask, _ = model(X_batch)
             X_batch = spec_utils.crop_center(mask, X_batch, False)
             y_batch = spec_utils.crop_center(mask, y_batch, False)
@@ -91,7 +90,7 @@ def valid_inner_epoch(X_valid, y_valid, model, bs):
             loss = criterion(X_batch * mask, y_batch)
             sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
 
-    return sum_loss / len(X_valid)
+    return sum_loss / len(dataloader.dataset)
 
 
 def main():
@@ -112,6 +111,7 @@ def main():
     p.add_argument('--val_filelist', '-V', type=str, default=None)
     p.add_argument('--cropsize', '-c', type=int, default=448)
     p.add_argument('--val_cropsize', '-C', type=int, default=896)
+    p.add_argument('--val_patch_dir', '-d', type=str, default='./val_patches')
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--epoch', '-E', type=int, default=100)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
@@ -153,8 +153,18 @@ def main():
     for i, (X_fname, y_fname) in enumerate(val_filelist):
         print(i + 1, os.path.basename(X_fname), os.path.basename(y_fname))
 
-    X_valid, y_valid = dataset.make_validation_set(
-        val_filelist, args.val_cropsize, model.offset, args.sr, args.hop_length)
+    val_dataset = dataset.make_validation_set(
+        filelist=val_filelist,
+        cropsize=args.val_cropsize,
+        offset=model.offset,
+        sr=args.sr,
+        hop_length=args.hop_length,
+        outdir=args.val_patch_dir)
+    val_dataloader = torch.utils.data.DataLoader(
+        dataset=val_dataset,
+        batch_size=args.val_batchsize,
+        shuffle=False,
+        num_workers=4)
 
     log = []
     oracle_X = None
@@ -180,7 +190,7 @@ def main():
             train_loss = train_inner_epoch(
                 X_train, y_train, model, optimizer, args.batchsize, instance_loss)
             valid_loss = valid_inner_epoch(
-                X_valid, y_valid, model, args.val_batchsize)
+                val_dataloader, model, args.val_batchsize)
 
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
                   .format(train_loss * 1000, valid_loss * 1000))
