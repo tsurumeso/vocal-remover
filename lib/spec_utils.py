@@ -66,8 +66,8 @@ def mask_uninformative(mask, ref, thres=0.4, min_range=64, fade_area=32):
 
 
 def align_wave_head_and_tail(a, b, sr):
-    a_mono = a[:, :sr * 2].sum(axis=0)
-    b_mono = b[:, :sr * 2].sum(axis=0)
+    a_mono = a[:, :sr * 4].sum(axis=0)
+    b_mono = b[:, :sr * 4].sum(axis=0)
     a_mono -= a_mono.mean()
     b_mono -= b_mono.mean()
     offset = len(a_mono) - 1
@@ -133,4 +133,6 @@ if __name__ == "__main__":
     X, _ = librosa.effects.trim(X)
     y, _ = librosa.effects.trim(y)
     X, y = align_wave_head_and_tail(X, y, 44100)
-    librosa.output.write_wav('test.wav', X - y, 44100)
+    librosa.output.write_wav('test_i.wav', y, 44100)
+    librosa.output.write_wav('test_m.wav', X, 44100)
+    librosa.output.write_wav('test_v.wav', X - y, 44100)
