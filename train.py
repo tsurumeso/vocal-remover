@@ -10,8 +10,8 @@ import torch
 import torch.nn as nn
 
 from lib import dataset
+from lib import nets
 from lib import spec_utils
-from lib import unet
 
 
 def train_val_split(mix_dir, inst_dir, val_rate, val_filelist_json):
@@ -64,7 +64,7 @@ def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
         y_batch = spec_utils.crop_center(mask, y_batch, False)
         abs_diff = criterion(X_batch * mask, y_batch)
 
-        loss = abs_diff.mean() + aux_loss * 0.1
+        loss = abs_diff.mean() * 0.9 + aux_loss * 0.1
         loss.backward()
         optimizer.step()
 
@@ -83,7 +83,7 @@ def valid_inner_epoch(dataloader, model, bs):
         for X_batch, y_batch in dataloader:
             X_batch = X_batch.cuda()
             y_batch = y_batch.cuda()
-            mask, _ = model(X_batch)
+            mask = model.predict(X_batch)
             X_batch = spec_utils.crop_center(mask, X_batch, False)
             y_batch = spec_utils.crop_center(mask, y_batch, False)
 
@@ -106,11 +106,11 @@ def main():
     p.add_argument('--lr_min', type=float, default=0.0001)
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
     p.add_argument('--lr_decay_patience', type=int, default=6)
-    p.add_argument('--batchsize', '-B', type=int, default=8)
-    p.add_argument('--val_batchsize', '-b', type=int, default=8)
+    p.add_argument('--batchsize', '-B', type=int, default=4)
+    p.add_argument('--val_batchsize', '-b', type=int, default=4)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
-    p.add_argument('--cropsize', '-c', type=int, default=448)
-    p.add_argument('--val_cropsize', '-C', type=int, default=896)
+    p.add_argument('--cropsize', '-c', type=int, default=256)
+    p.add_argument('--val_cropsize', '-C', type=int, default=512)
     p.add_argument('--val_patch_dir', '-d', type=str, default='./val_patches')
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--epoch', '-E', type=int, default=100)
@@ -127,7 +127,7 @@ def main():
     torch.manual_seed(args.seed)
     timestamp = dt.now().strftime('%Y%m%d%H%M%S')
 
-    model = unet.MultiBandUNet()
+    model = nets.CascadedASPPNet()
     if args.pretrained_model is not None:
         model.load_state_dict(torch.load(args.pretrained_model))
     if args.gpu >= 0:
@@ -156,9 +156,9 @@ def main():
     val_dataset = dataset.make_validation_set(
         filelist=val_filelist,
         cropsize=args.val_cropsize,
-        offset=model.offset,
         sr=args.sr,
         hop_length=args.hop_length,
+        model=model,
         outdir=args.val_patch_dir)
     val_dataloader = torch.utils.data.DataLoader(
         dataset=val_dataset,
@@ -172,7 +172,7 @@ def main():
     best_loss = np.inf
     for epoch in range(args.epoch):
         X_train, y_train = dataset.make_training_set(
-            train_filelist, args.cropsize, args.patches, args.sr, args.hop_length)
+            train_filelist, args.cropsize, args.patches, args.sr, args.hop_length, model)
 
         if args.mixup:
             X_train, y_train = dataset.mixup_generator(

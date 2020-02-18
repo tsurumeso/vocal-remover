@@ -45,7 +45,19 @@ def get_oracle_data(X, y, instance_loss, oracle_rate, oracle_drop_rate):
     return oracle_X, oracle_y, idx
 
 
-def make_training_set(filelist, cropsize, patches, sr, hop_length):
+def make_padding(width, cropsize, offset, conv_offset):
+    left = offset if conv_offset == 0 else conv_offset
+    roi_size = cropsize - left * 2
+    if roi_size == 0:
+        roi_size = cropsize
+    right = roi_size - (width % roi_size) + left
+
+    return left, right, roi_size
+
+
+def make_training_set(filelist, cropsize, patches, sr, hop_length, model):
+    offset = model.offset
+    conv_offset = model.conv_offset
     len_dataset = patches * len(filelist)
     X_dataset = np.zeros(
         (len_dataset, 2, hop_length, cropsize), dtype=np.float32)
@@ -53,11 +65,15 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length):
         (len_dataset, 2, hop_length, cropsize), dtype=np.float32)
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length)
+        l, r, roi_size = make_padding(X.shape[2], cropsize, offset, conv_offset)
+        X_pad = np.pad(X, ((0, 0), (0, 0), (l, r)), mode='constant')
+        y_pad = np.pad(y, ((0, 0), (0, 0), (l, r)), mode='constant')
+        starts = np.random.randint(0, X_pad.shape[2] - cropsize, patches)
+        ends = starts + cropsize
         for j in range(patches):
             idx = i * patches + j
-            start = np.random.randint(0, X.shape[2] - cropsize)
-            X_dataset[idx] = X[:, :, start:start + cropsize]
-            y_dataset[idx] = y[:, :, start:start + cropsize]
+            X_dataset[idx] = X_pad[:, :, starts[j]:ends[j]]
+            y_dataset[idx] = y_pad[:, :, starts[j]:ends[j]]
             if np.random.uniform() < 0.5:
                 # swap channel
                 X_dataset[idx] = X_dataset[idx, ::-1]
@@ -66,16 +82,16 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length):
     return X_dataset, y_dataset
 
 
-def make_validation_set(filelist, cropsize, offset, sr, hop_length, outdir='./val_patches', skip_if_exists=True):
+def make_validation_set(filelist, cropsize, sr, hop_length, model, outdir='./val_patches', skip_if_exists=True):
     patch_list = []
+    offset = model.offset
+    conv_offset = model.conv_offset
     os.makedirs(outdir, exist_ok=True)
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length)
-        left = offset
-        roi_size = cropsize - left * 2
-        right = roi_size - (X.shape[2] % roi_size) + left
-        X_pad = np.pad(X, ((0, 0), (0, 0), (left, right)), mode='constant')
-        y_pad = np.pad(y, ((0, 0), (0, 0), (left, right)), mode='constant')
+        l, r, roi_size = make_padding(X.shape[2], cropsize, offset, conv_offset)
+        X_pad = np.pad(X, ((0, 0), (0, 0), (l, r)), mode='constant')
+        y_pad = np.pad(y, ((0, 0), (0, 0), (l, r)), mode='constant')
         len_dataset = int(np.ceil(X.shape[2] / roi_size))
         for j in range(len_dataset):
             outpath = os.path.join(outdir, '{:04}_p{:03}.npz'.format(i, j))
