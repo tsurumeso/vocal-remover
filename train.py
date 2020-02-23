@@ -45,14 +45,14 @@ def train_val_split(mix_dir, inst_dir, val_rate, val_filelist_json):
     return train_filelist, val_filelist
 
 
-def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
+def train_inner_epoch(X_train, y_train, model, optimizer, batchsize, instance_loss):
     sum_loss = 0
     model.train()
     aux_crit = nn.L1Loss()
     criterion = nn.L1Loss(reduction='none')
     perm = np.random.permutation(len(X_train))
-    for i in range(0, len(X_train), bs):
-        local_perm = perm[i: i + bs]
+    for i in range(0, len(X_train), batchsize):
+        local_perm = perm[i: i + batchsize]
         X_batch = torch.from_numpy(X_train[local_perm]).cuda()
         y_batch = torch.from_numpy(y_train[local_perm]).cuda()
 
@@ -75,7 +75,7 @@ def train_inner_epoch(X_train, y_train, model, optimizer, bs, instance_loss):
     return sum_loss / len(X_train)
 
 
-def valid_inner_epoch(dataloader, model, bs):
+def val_inner_epoch(dataloader, model):
     sum_loss = 0
     model.eval()
     criterion = nn.L1Loss()
@@ -101,17 +101,16 @@ def main():
     p.add_argument('--hop_length', '-l', type=int, default=1024)
     p.add_argument('--mixture_dataset', '-m', required=True)
     p.add_argument('--instrumental_dataset', '-i', required=True)
-    p.add_argument('--validation_rate', '-v', type=float, default=0.1)
     p.add_argument('--learning_rate', type=float, default=0.001)
     p.add_argument('--lr_min', type=float, default=0.0001)
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
     p.add_argument('--lr_decay_patience', type=int, default=6)
     p.add_argument('--batchsize', '-B', type=int, default=4)
-    p.add_argument('--val_batchsize', '-b', type=int, default=4)
-    p.add_argument('--val_filelist', '-V', type=str, default=None)
     p.add_argument('--cropsize', '-c', type=int, default=256)
+    p.add_argument('--val_rate', '-v', type=float, default=0.1)
+    p.add_argument('--val_filelist', '-V', type=str, default=None)
+    p.add_argument('--val_batchsize', '-b', type=int, default=4)
     p.add_argument('--val_cropsize', '-C', type=int, default=512)
-    p.add_argument('--val_patch_dir', '-d', type=str, default='./val_patches')
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--epoch', '-E', type=int, default=100)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
@@ -120,6 +119,7 @@ def main():
     p.add_argument('--mixup', '-M', action='store_true')
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
+    p.add_argument('--debug', '-d', action='store_true')
     args = p.parse_args()
 
     random.seed(args.seed)
@@ -144,8 +144,13 @@ def main():
     train_filelist, val_filelist = train_val_split(
         mix_dir=args.mixture_dataset,
         inst_dir=args.instrumental_dataset,
-        val_rate=args.validation_rate,
+        val_rate=args.val_rate,
         val_filelist_json=args.val_filelist)
+
+    if args.debug:
+        print('### DEBUG MODE')
+        train_filelist = train_filelist[:1]
+        val_filelist = val_filelist[:1]
 
     with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
         json.dump(val_filelist, f, ensure_ascii=False)
@@ -158,8 +163,7 @@ def main():
         cropsize=args.val_cropsize,
         sr=args.sr,
         hop_length=args.hop_length,
-        model=model,
-        outdir=args.val_patch_dir)
+        offset=model.offset)
     val_dataloader = torch.utils.data.DataLoader(
         dataset=val_dataset,
         batch_size=args.val_batchsize,
@@ -172,7 +176,7 @@ def main():
     best_loss = np.inf
     for epoch in range(args.epoch):
         X_train, y_train = dataset.make_training_set(
-            train_filelist, args.cropsize, args.patches, args.sr, args.hop_length, model)
+            train_filelist, args.cropsize, args.patches, args.sr, args.hop_length, model.offset)
 
         if args.mixup:
             X_train, y_train = dataset.mixup_generator(
@@ -189,22 +193,22 @@ def main():
             print('  * inner epoch {}'.format(inner_epoch))
             train_loss = train_inner_epoch(
                 X_train, y_train, model, optimizer, args.batchsize, instance_loss)
-            valid_loss = valid_inner_epoch(
-                val_dataloader, model, args.val_batchsize)
+            val_loss = val_inner_epoch(val_dataloader, model)
 
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
-                  .format(train_loss * 1000, valid_loss * 1000))
+                  .format(train_loss * 1000, val_loss * 1000))
 
-            scheduler.step(valid_loss)
+            scheduler.step(val_loss)
 
-            if valid_loss < best_loss:
-                best_loss = valid_loss
+            if val_loss < best_loss:
+                best_loss = val_loss
                 print('    * best validation loss')
                 model_path = 'models/model_iter{}.pth'.format(epoch)
                 torch.save(model.state_dict(), model_path)
 
-            log.append([train_loss, valid_loss])
-            np.save('log_{}.npy'.format(timestamp), np.asarray(log))
+            log.append([train_loss, val_loss])
+            with open('log_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
+                json.dump(log, f, ensure_ascii=False)
 
         if args.oracle_rate > 0:
             instance_loss /= args.inner_epoch

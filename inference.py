@@ -41,15 +41,14 @@ def main():
     print('done')
 
     print('wave source stft...', end=' ')
-    X, phase = spec_utils.calc_spec(X, args.hop_length, phase=True)
+    X = spec_utils.calc_spec(X, args.hop_length)
+    X, phase = np.abs(X), np.exp(1.j * np.angle(X))
     coeff = X.max()
     X /= coeff
     print('done')
 
     offset = model.offset
-    conv_offset = model.conv_offset
-    l, r, roi_size = dataset.make_padding(
-        X.shape[2], args.window_size, offset, conv_offset)
+    l, r, roi_size = dataset.make_padding(X.shape[2], args.window_size, offset)
     X_pad = np.pad(X, ((0, 0), (0, 0), (l, r)), mode='constant')
 
     masks = []
@@ -58,11 +57,9 @@ def main():
         for j in tqdm(range(int(np.ceil(X.shape[2] / roi_size)))):
             start = j * roi_size
             X_window = X_pad[None, :, :, start:start + args.window_size]
-            X_tta = np.concatenate([X_window, X_window[:, ::-1, :, :]])
-            pred = model.predict(torch.from_numpy(X_tta).to(device))
+            pred = model.predict(torch.from_numpy(X_window).to(device))
             pred = pred.detach().cpu().numpy()
-            pred[1] = pred[1, ::-1, :, :]
-            masks.append(pred.mean(axis=0))
+            masks.append(pred[0])
 
     mask = np.concatenate(masks, axis=2)[:, :, :X.shape[2]]
     if args.postprocess:

@@ -21,7 +21,7 @@ def crop_center(h1, h2, concat=True):
         return h2
 
 
-def calc_spec(X, hop_length, phase=False):
+def calc_spec(X, hop_length):
     n_fft = (hop_length - 1) * 2
     audio_left = np.asfortranarray(X[0])
     audio_right = np.asfortranarray(X[1])
@@ -29,13 +29,7 @@ def calc_spec(X, hop_length, phase=False):
     spec_right = librosa.stft(audio_right, n_fft, hop_length=hop_length)
     spec = np.asfortranarray([spec_left, spec_right])
 
-    if phase:
-        mag = np.abs(spec)
-        phase = np.exp(1.j * np.angle(spec))
-        return mag, phase
-    else:
-        mag = np.abs(spec)
-        return mag
+    return spec
 
 
 def mask_uninformative(mask, ref, thres=0.4, min_range=64, fade_area=32):
@@ -62,6 +56,7 @@ def mask_uninformative(mask, ref, thres=0.4, min_range=64, fade_area=32):
                         out=end_mask)
             mask[:, :, s + fade_area:e - fade_area] = 1
             old_e = e
+
     return mask
 
 
@@ -103,15 +98,14 @@ def cache_or_load(mix_path, inst_path, sr, hop_length):
         y, _ = librosa.effects.trim(y)
         X, y = align_wave_head_and_tail(X, y, sr)
 
-        X = calc_spec(X, hop_length)
-        y = calc_spec(y, hop_length)
+        X = np.abs(calc_spec(X, hop_length))
+        y = np.abs(calc_spec(y, hop_length))
 
         _, ext = os.path.splitext(mix_path)
         np.save(spec_mix_path, X)
         np.save(spec_inst_path, y)
 
-    coeff = np.max([X.max(), y.max()])
-    return X / coeff, y / coeff
+    return X, y
 
 
 def spec_to_wav(mag, phase, hop_length):
@@ -121,6 +115,7 @@ def spec_to_wav(mag, phase, hop_length):
     wav_left = librosa.istft(spec_left, hop_length=hop_length)
     wav_right = librosa.istft(spec_right, hop_length=hop_length)
     wav = np.asfortranarray([wav_left, wav_right])
+
     return wav
 
 
