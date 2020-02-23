@@ -15,9 +15,9 @@ class BaseUNet(nn.Module):
         self.enc5 = layers.Encoder(ch * 8, ch * 16, 3, 2, pad)
 
         self.center = nn.Sequential(
-            layers.Conv2DBNActiv(ch * 16, ch * 32, 5, 1, pad),
+            layers.Conv2DBNActiv(ch * 16, ch * 32, 3, 1, pad),
+            layers.Conv2DBNActiv(ch * 32, ch * 16, 3, 1, pad),
             nn.Dropout2d(0.1),
-            layers.Conv2DBNActiv(ch * 32, ch * 16, 5, 1, pad)
         )
 
         self.dec5 = layers.Decoder(ch * (8 + 16), ch * 16, 3, 1, pad)
@@ -80,39 +80,31 @@ class CascadedASPPNet(nn.Module):
 
     def __init__(self):
         super(CascadedASPPNet, self).__init__()
-        self.l_band_net = BaseASPPNet(2, 16, ((2, 4), (4, 8), (8, 16)))
-        self.h_band_net = BaseASPPNet(2, 16, ((2, 4), (4, 8), (8, 16)))
-        self.first_stage = BaseASPPNet(1, 16)
+        self.low_band_net = BaseASPPNet(2, 32, ((2, 4), (4, 8), (8, 16)))
+        self.high_band_net = BaseASPPNet(2, 32, ((2, 4), (4, 8), (8, 16)))
 
-        self.bridge = layers.Conv2DBNActiv(34, 4, 1, 1, 0)
-        self.second_stage = BaseASPPNet(4, 32)
+        self.bridge = layers.Conv2DBNActiv(34, 16, 1, 1, 0)
+        self.full_band_net = BaseASPPNet(16, 32)
 
         self.out = nn.Sequential(
             layers.Conv2DBNActiv(32, 16, 3, 1, 1),
             nn.Conv2d(16, 2, 1, bias=False))
-        self.aux_out = nn.Sequential(
-            layers.Conv2DBNActiv(32, 16, 3, 1, 1),
-            nn.Conv2d(16, 2, 1, bias=False))
+        self.aux_out = nn.Conv2d(32, 2, 1, bias=False)
 
-        self.offset = 64
-        self.conv_offset = 0
+        self.offset = 128
 
     def __call__(self, x):
         bandw = x.size()[2] // 2
         x_l = x[:, :, :bandw]
         x_h = x[:, :, bandw:]
-        diff = (x[:, 0] - x[:, 1])[:, None]
 
         aux = torch.cat([
-            torch.cat([
-                self.l_band_net(x_l),
-                self.h_band_net(x_h)
-            ], dim=2),
-            self.first_stage(diff)
-        ], dim=1)
+            self.low_band_net(x_l),
+            self.high_band_net(x_h)
+        ], dim=2)
 
-        h = torch.cat([x, aux], dim=1)
-        h = self.second_stage(self.bridge(h))
+        h = self.bridge(torch.cat([x, aux], dim=1))
+        h = self.full_band_net(h)
 
         h = torch.sigmoid(self.out(h))
         aux = torch.sigmoid(self.aux_out(aux))
@@ -123,18 +115,14 @@ class CascadedASPPNet(nn.Module):
         bandw = x.size()[2] // 2
         x_l = x[:, :, :bandw]
         x_h = x[:, :, bandw:]
-        diff = (x[:, 0] - x[:, 1])[:, None]
 
         aux = torch.cat([
-            torch.cat([
-                self.l_band_net(x_l),
-                self.h_band_net(x_h)
-            ], dim=2),
-            self.first_stage(diff)
-        ], dim=1)
+            self.low_band_net(x_l),
+            self.high_band_net(x_h)
+        ], dim=2)
 
-        h = torch.cat([x, aux], dim=1)
-        h = self.second_stage(self.bridge(h))
+        h = self.bridge(torch.cat([x, aux], dim=1))
+        h = self.full_band_net(h)
 
         h = torch.sigmoid(self.out(h))
         if self.offset > 0:

@@ -108,45 +108,23 @@ class Decoder(nn.Module):
         return h
 
 
-class DecoderV2(nn.Module):
-
-    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dropout=False):
-        super(DecoderV2, self).__init__()
-        self.conv1 = Conv2DBNActiv(nin, nout, 1, 1, 0)
-        self.conv2 = Conv2DBNActiv(nout, nout, ksize, 1, pad)
-        self.dropout = nn.Dropout2d(0.1) if dropout else None
-
-    def __call__(self, x, skip=None):
-        if skip is not None:
-            x = torch.cat([x, skip], dim=1)
-        h = self.conv1(x)
-        h = F.interpolate(h, scale_factor=2, mode='bilinear', align_corners=True)
-        h = self.conv2(h)
-
-        if self.dropout is not None:
-            h = self.dropout(h)
-
-        return h
-
-
 class ASPPModule(nn.Module):
 
     def __init__(self, nin, dilations=(4, 8, 16)):
         super(ASPPModule, self).__init__()
         self.conv1 = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
-            Conv2DBNActiv(nin, nin, 1, 1, 0, activ=nn.LeakyReLU)
+            Conv2DBNActiv(nin, nin, 1, 1, 0)
         )
-        self.conv2 = Conv2DBNActiv(
-            nin, nin, 1, 1, 0, activ=nn.LeakyReLU)
+        self.conv2 = Conv2DBNActiv(nin, nin, 1, 1, 0)
         self.conv3 = SeperableConv2DBNActiv(
-            nin, nin, 3, 1, dilations[0], dilations[0], activ=nn.LeakyReLU)
+            nin, nin, 3, 1, dilations[0], dilations[0])
         self.conv4 = SeperableConv2DBNActiv(
-            nin, nin, 3, 1, dilations[1], dilations[1], activ=nn.LeakyReLU)
+            nin, nin, 3, 1, dilations[1], dilations[1])
         self.conv5 = SeperableConv2DBNActiv(
-            nin, nin, 3, 1, dilations[2], dilations[2], activ=nn.LeakyReLU)
+            nin, nin, 3, 1, dilations[2], dilations[2])
         self.bottleneck = nn.Sequential(
-            Conv2DBNActiv(nin * 5, nin, 1, 1, 0, activ=nn.LeakyReLU),
+            Conv2DBNActiv(nin * 5, nin, 1, 1, 0),
             nn.Dropout2d(0.1)
         )
 
