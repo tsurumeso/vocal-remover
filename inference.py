@@ -4,6 +4,7 @@ import os
 import cv2
 import librosa
 import numpy as np
+import soundfile as sf
 import torch
 from tqdm import tqdm
 
@@ -78,12 +79,12 @@ def main():
     print('instrumental inverse stft...', end=' ')
     wav = spec_utils.spec_to_wav(inst_pred, phase, args.hop_length)
     print('done')
-    librosa.output.write_wav('{}_Instrumental.wav'.format(basename), wav, sr)
+    sf.write('{}_Instrumental.wav'.format(basename), wav.T, sr)
 
     print('vocal inverse stft...', end=' ')
     wav = spec_utils.spec_to_wav(vocal_pred, phase, args.hop_length)
     print('done')
-    librosa.output.write_wav('{}_Vocal.wav'.format(basename), wav, sr)
+    sf.write('{}_Vocal.wav'.format(basename), wav.T, sr)
 
 
 if __name__ == '__main__':

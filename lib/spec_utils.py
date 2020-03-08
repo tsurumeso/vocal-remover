@@ -2,6 +2,7 @@ import os
 
 import librosa
 import numpy as np
+import soundfile as sf
 import torch
 
 
@@ -128,6 +129,6 @@ if __name__ == "__main__":
     X, _ = librosa.effects.trim(X)
     y, _ = librosa.effects.trim(y)
     X, y = align_wave_head_and_tail(X, y, 44100)
-    librosa.output.write_wav('test_i.wav', y, 44100)
-    librosa.output.write_wav('test_m.wav', X, 44100)
-    librosa.output.write_wav('test_v.wav', X - y, 44100)
+    sf.write('test_i.wav', y.T, 44100)
+    sf.write('test_m.wav', X.T, 44100)
+    sf.write('test_v.wav', (X - y).T, 44100)
