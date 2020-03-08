@@ -116,7 +116,7 @@ def main():
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
     p.add_argument('--oracle_rate', '-O', type=float, default=0)
     p.add_argument('--oracle_drop_rate', '-o', type=float, default=0.5)
-    p.add_argument('--mixup', '-M', action='store_true')
+    p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
     p.add_argument('--debug', '-d', action='store_true')
@@ -178,9 +178,8 @@ def main():
         X_train, y_train = dataset.make_training_set(
             train_filelist, args.cropsize, args.patches, args.sr, args.hop_length, model.offset)
 
-        if args.mixup:
-            X_train, y_train = dataset.mixup_generator(
-                X_train, y_train, args.mixup_alpha)
+        X_train, y_train = dataset.mixup_generator(
+            X_train, y_train, args.mixup_rate, args.mixup_alpha)
 
         if oracle_X is not None and oracle_y is not None:
             perm = np.random.permutation(len(oracle_X))

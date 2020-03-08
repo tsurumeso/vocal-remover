@@ -22,11 +22,9 @@ class VocalRemoverValidationSet(torch.utils.data.Dataset):
         return data['X'], data['y']
 
 
-def mixup_generator(X, y, alpha):
-    perm = np.random.permutation(len(X))[:len(X) // 2]
-    if len(perm) % 2 != 0:
-        perm = perm[:-1]
-    for i in range(0, len(perm), 2):
+def mixup_generator(X, y, rate, alpha):
+    perm = np.random.permutation(len(X))[:int(len(X) * rate)]
+    for i in range(len(perm) - 1):
         lam = np.random.beta(alpha, alpha)
         X[perm[i]] = lam * X[perm[i]] + (1 - lam) * X[perm[i + 1]]
         y[perm[i]] = lam * y[perm[i]] + (1 - lam) * y[perm[i + 1]]
