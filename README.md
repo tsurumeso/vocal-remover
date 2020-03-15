@@ -29,8 +29,21 @@ python inference.py --input path/to/mixture/audio --gpu 0
 ```
 
 ## Train your own model
+
+### Install SoundStretch
 ```
-python train.py -i dataset/instrumentals -m dataset/mixtures -M -g 0
+sudo apt install soundstretch
+```
+
+### Offline data augmentation
+```
+python augment.py -i dataset/instrumentals -m dataset/mixtures -p -1
+python augment.py -i dataset/instrumentals -m dataset/mixtures -p 1
+```
+
+### Run training script
+```
+python train.py -i dataset/instrumentals -m dataset/mixtures -M 0.5 -g 0
 ```
 
 `-i` specifies an instrumental audio directory, and `-m` specifies the corresponding mixture audio directory.
