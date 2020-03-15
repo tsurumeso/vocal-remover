@@ -33,7 +33,7 @@ def calc_spec(X, hop_length):
     return spec
 
 
-def mask_uninformative(mask, ref, thres=0.4, min_range=64, fade_area=32):
+def mask_uninformative(mask, ref, thres=0.3, min_range=64, fade_area=32):
     if min_range < fade_area * 2:
         raise ValueError('min_range must be >= fade_area * 2')
     idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
