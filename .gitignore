@@ -1,6 +1,7 @@
 *.pyc
 *.npy
 *.npz
+*.pth
 *.json
 
 *.png

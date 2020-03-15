@@ -12,15 +12,11 @@ This is a deep-learning-based tool to extract instrumental track from mixture au
 pip install -r requirements.txt
 ```
 
-### Enable GPU support
-Install CuPy precompiled binary package which includes the latest version of cuDNN library.
-See: [CuPy Installation Guide](https://docs-cupy.chainer.org/en/stable/install.html#install-cupy)
-
 ### Getting vocal-remover
 Download the latest version from [here](https://github.com/tsurumeso/vocal-remover/releases).
 
 ## Usage
-Running the following code will split the mixture audio into an instrumental track and a vocal track. They are saved as `instrumental.wav` and `vocal.wav`.
+Running the following code will split the mixture audio into an instrumental track and a vocal track. These tracks are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
 
 ### Run on CPU
 ```
@@ -33,8 +29,21 @@ python inference.py --input path/to/mixture/audio --gpu 0
 ```
 
 ## Train your own model
+
+### Install SoundStretch
 ```
-python train.py -i dataset/instrumentals -m dataset/mixtures -M -g 0
+sudo apt install soundstretch
+```
+
+### Offline data augmentation
+```
+python augment.py -i dataset/instrumentals -m dataset/mixtures -p -1
+python augment.py -i dataset/instrumentals -m dataset/mixtures -p 1
+```
+
+### Run training script
+```
+python train.py -i dataset/instrumentals -m dataset/mixtures -M 0.5 -g 0
 ```
 
 `-i` specifies an instrumental audio directory, and `-m` specifies the corresponding mixture audio directory.

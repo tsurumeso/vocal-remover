@@ -1,23 +1,28 @@
 import os
 
-import chainer.functions as F
 import librosa
 import numpy as np
+import soundfile as sf
+import torch
 
 
-def crop_and_concat(h1, h2, concat=True):
+def crop_center(h1, h2, concat=True):
     # s_freq = (h2.shape[2] - h1.shape[2]) // 2
     # e_freq = s_freq + h1.shape[2]
-    s_time = (h2.shape[3] - h1.shape[3]) // 2
-    e_time = s_time + h1.shape[3]
+    h1_shape = h1.size()
+    h2_shape = h2.size()
+    if h2_shape[3] < h1_shape[3]:
+        raise ValueError('h2_shape[3] must be greater than h1_shape[3]')
+    s_time = (h2_shape[3] - h1_shape[3]) // 2
+    e_time = s_time + h1_shape[3]
     h2 = h2[:, :, :, s_time:e_time]
     if concat:
-        return F.concat([h1, h2])
+        return torch.cat([h1, h2], dim=1)
     else:
         return h2
 
 
-def calc_spec(X, hop_length, phase=False):
+def calc_spec(X, hop_length):
     n_fft = (hop_length - 1) * 2
     audio_left = np.asfortranarray(X[0])
     audio_right = np.asfortranarray(X[1])
@@ -25,16 +30,10 @@ def calc_spec(X, hop_length, phase=False):
     spec_right = librosa.stft(audio_right, n_fft, hop_length=hop_length)
     spec = np.asfortranarray([spec_left, spec_right])
 
-    if phase:
-        mag = np.abs(spec)
-        phase = np.exp(1.j * np.angle(spec))
-        return mag, phase
-    else:
-        mag = np.abs(spec)
-        return mag
+    return spec
 
 
-def mask_uninformative(mask, ref, thres=0.4, min_range=64, fade_area=32):
+def mask_uninformative(mask, ref, thres=0.3, min_range=64, fade_area=32):
     if min_range < fade_area * 2:
         raise ValueError('min_range must be >= fade_area * 2')
     idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
@@ -58,12 +57,13 @@ def mask_uninformative(mask, ref, thres=0.4, min_range=64, fade_area=32):
                         out=end_mask)
             mask[:, :, s + fade_area:e - fade_area] = 1
             old_e = e
+
     return mask
 
 
 def align_wave_head_and_tail(a, b, sr):
-    a_mono = a[:, :sr * 2].sum(axis=0)
-    b_mono = b[:, :sr * 2].sum(axis=0)
+    a_mono = a[:, :sr * 4].sum(axis=0)
+    b_mono = b[:, :sr * 4].sum(axis=0)
     a_mono -= a_mono.mean()
     b_mono -= b_mono.mean()
     offset = len(a_mono) - 1
@@ -99,15 +99,14 @@ def cache_or_load(mix_path, inst_path, sr, hop_length):
         y, _ = librosa.effects.trim(y)
         X, y = align_wave_head_and_tail(X, y, sr)
 
-        X = calc_spec(X, hop_length)
-        y = calc_spec(y, hop_length)
+        X = np.abs(calc_spec(X, hop_length))
+        y = np.abs(calc_spec(y, hop_length))
 
         _, ext = os.path.splitext(mix_path)
         np.save(spec_mix_path, X)
         np.save(spec_inst_path, y)
 
-    coeff = np.max([X.max(), y.max()])
-    return X / coeff, y / coeff
+    return X, y
 
 
 def spec_to_wav(mag, phase, hop_length):
@@ -117,6 +116,7 @@ def spec_to_wav(mag, phase, hop_length):
     wav_left = librosa.istft(spec_left, hop_length=hop_length)
     wav_right = librosa.istft(spec_right, hop_length=hop_length)
     wav = np.asfortranarray([wav_left, wav_right])
+
     return wav
 
 
@@ -129,4 +129,6 @@ if __name__ == "__main__":
     X, _ = librosa.effects.trim(X)
     y, _ = librosa.effects.trim(y)
     X, y = align_wave_head_and_tail(X, y, 44100)
-    librosa.output.write_wav('test.wav', X - y, 44100)
+    sf.write('test_i.wav', y.T, 44100)
+    sf.write('test_m.wav', X.T, 44100)
+    sf.write('test_v.wav', (X - y).T, 44100)
