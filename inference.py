@@ -16,7 +16,7 @@ from lib import spec_utils
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--gpu', '-g', type=int, default=-1)
-    p.add_argument('--model', '-m', type=str, default='models/baseline.npz')
+    p.add_argument('--model', '-m', type=str, default='models/baseline.pth')
     p.add_argument('--input', '-i', required=True)
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--hop_length', '-l', type=int, default=1024)
