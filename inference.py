@@ -26,14 +26,12 @@ def main():
     args = p.parse_args()
 
     print('loading model...', end=' ')
+    device = torch.device('cpu')
     model = nets.CascadedASPPNet()
-    model.load_state_dict(torch.load(args.model))
-    device = None
+    model.load_state_dict(torch.load(args.model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
         device = torch.device('cuda:{}'.format(args.gpu))
         model.to(device)
-    else:
-        device = torch.device('cpu')
     print('done')
 
     print('loading wave source...', end=' ')
