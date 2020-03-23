@@ -45,12 +45,13 @@ def train_val_split(mix_dir, inst_dir, val_rate, val_filelist_json):
     return train_filelist, val_filelist
 
 
-def train_inner_epoch(X_train, y_train, model, optimizer, batchsize, instance_loss):
+def train_inner_epoch(X_train, y_train, model, optimizer, batchsize):
     sum_loss = 0
     model.train()
     aux_crit = nn.L1Loss()
     criterion = nn.L1Loss(reduction='none')
     perm = np.random.permutation(len(X_train))
+    instance_loss = np.zeros(len(X_train), dtype=np.float32)
     for i in range(0, len(X_train), batchsize):
         local_perm = perm[i: i + batchsize]
         X_batch = torch.from_numpy(X_train[local_perm]).cuda()
@@ -69,10 +70,10 @@ def train_inner_epoch(X_train, y_train, model, optimizer, batchsize, instance_lo
         optimizer.step()
 
         abs_diff_np = abs_diff.detach().cpu().numpy()
-        instance_loss[local_perm] += abs_diff_np.mean(axis=(1, 2, 3))
+        instance_loss[local_perm] = abs_diff_np.mean(axis=(1, 2, 3))
         sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
 
-    return sum_loss / len(X_train)
+    return sum_loss / len(X_train), instance_loss
 
 
 def val_inner_epoch(dataloader, model):
@@ -182,16 +183,15 @@ def main():
             X_train, y_train, args.mixup_rate, args.mixup_alpha)
 
         if oracle_X is not None and oracle_y is not None:
-            perm = np.random.permutation(len(oracle_X))
+            perm = np.random.permutation(len(X_train))[:len(oracle_X)]
             X_train[perm] = oracle_X
             y_train[perm] = oracle_y
 
         print('# epoch', epoch)
-        instance_loss = np.zeros(len(X_train), dtype=np.float32)
         for inner_epoch in range(args.inner_epoch):
             print('  * inner epoch {}'.format(inner_epoch))
-            train_loss = train_inner_epoch(
-                X_train, y_train, model, optimizer, args.batchsize, instance_loss)
+            train_loss, instance_loss = train_inner_epoch(
+                X_train, y_train, model, optimizer, args.batchsize)
             val_loss = val_inner_epoch(val_dataloader, model)
 
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
@@ -210,10 +210,9 @@ def main():
                 json.dump(log, f, ensure_ascii=False)
 
         if args.oracle_rate > 0:
-            instance_loss /= args.inner_epoch
             oracle_X, oracle_y, idx = dataset.get_oracle_data(
                 X_train, y_train, instance_loss, args.oracle_rate, args.oracle_drop_rate)
-            print('  * oracle loss = {:.6f}'.format(instance_loss[idx].mean()))
+            print('  * oracle loss = {:.6f}'.format(instance_loss[idx].mean() * 1000))
 
         del X_train, y_train
         gc.collect()
