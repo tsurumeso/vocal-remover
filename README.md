@@ -16,7 +16,7 @@ pip install -r requirements.txt
 Download the latest version from [here](https://github.com/tsurumeso/vocal-remover/releases).
 
 ## Usage
-Running the following code will split the mixture audio into an instrumental track and a vocal track. These tracks are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
+The following code splits the mixture audio into an instrumental track and a vocal track. These tracks are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
 
 ### Run on CPU
 ```
@@ -35,18 +35,7 @@ python inference.py --input path/to/mixture/audio --gpu 0
 sudo apt install soundstretch
 ```
 
-### Offline data augmentation
-```
-python augment.py -i dataset/instrumentals -m dataset/mixtures -p -1
-python augment.py -i dataset/instrumentals -m dataset/mixtures -p 1
-```
-
-### Run training script
-```
-python train.py -i dataset/instrumentals -m dataset/mixtures -M 0.5 -g 0
-```
-
-`-i` specifies an instrumental audio directory, and `-m` specifies the corresponding mixture audio directory.
+### Place your dataset
 
 ```
 dataset/
@@ -58,6 +47,17 @@ dataset/
        +- 01_foo_mix.wav
        +- 02_bar_mix.mp3
        +- ...
+```
+
+### Offline data augmentation
+```
+python augment.py -i dataset/instrumentals -m dataset/mixtures -p -1
+python augment.py -i dataset/instrumentals -m dataset/mixtures -p 1
+```
+
+### Train a model
+```
+python train.py -i dataset/instrumentals -m dataset/mixtures -M 0.5 -g 0
 ```
 
 ## References
