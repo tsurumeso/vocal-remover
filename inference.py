@@ -68,9 +68,12 @@ def main():
     vocal_pred = X * (1 - mask) * coeff
 
     if args.out_mask:
-        norm_mask = np.uint8((1 - mask).mean(axis=0) * 255)
-        hm = cv2.applyColorMap(norm_mask, cv2.COLORMAP_MAGMA)
-        cv2.imwrite('mask.png', hm[::-1])
+        norm_mask = np.uint8((1 - mask) * 255)
+        canvas = np.zeros((norm_mask.shape[1], norm_mask.shape[2], 3))
+        canvas[:, :, 1] = norm_mask[0]
+        canvas[:, :, 2] = norm_mask[1]
+        canvas[:, :, 0] = np.max(norm_mask, axis=0)
+        cv2.imwrite('mask.png', canvas[::-1])
 
     basename = os.path.splitext(os.path.basename(args.input))[0]
 
