@@ -113,7 +113,7 @@ class ASPPModule(nn.Module):
     def __init__(self, nin, dilations=(4, 8, 16)):
         super(ASPPModule, self).__init__()
         self.conv1 = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.AdaptiveAvgPool2d((1, None)),
             Conv2DBNActiv(nin, nin, 1, 1, 0)
         )
         self.conv2 = Conv2DBNActiv(nin, nin, 1, 1, 0)
