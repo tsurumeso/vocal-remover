@@ -3,29 +3,33 @@
 [![Release](https://img.shields.io/github/release/tsurumeso/vocal-remover.svg)](https://github.com/tsurumeso/vocal-remover/releases/latest)
 [![Release](https://img.shields.io/github/downloads/tsurumeso/vocal-remover/total.svg)](https://github.com/tsurumeso/vocal-remover/releases)
 
-This is a deep-learning-based tool to extract instrumental track from mixture audio.
+This is a deep-learning-based tool to extract instrumental track from your songs.
 
 ## Installation
-
-### Install required packages
-```
-pip install -r requirements.txt
-```
 
 ### Getting vocal-remover
 Download the latest version from [here](https://github.com/tsurumeso/vocal-remover/releases).
 
+### Install PyTorch
+See: [GET STARTED](https://pytorch.org/get-started/locally/)
+
+### Install the other packages
+```
+cd vocal-remover
+pip install -r requirements.txt
+```
+
 ## Usage
-The following code splits the mixture audio into an instrumental track and a vocal track. These tracks are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
+The following command separates the input into instrumental and vocal tracks. They are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
 
 ### Run on CPU
 ```
-python inference.py --input path/to/mixture/audio
+python inference.py --input path/to/an/audio/file
 ```
 
 ### Run on GPU
 ```
-python inference.py --input path/to/mixture/audio --gpu 0
+python inference.py --input path/to/an/audio/file --gpu 0
 ```
 
 ## Train your own model
@@ -36,10 +40,9 @@ sudo apt install soundstretch
 ```
 
 ### Place your dataset
-
 ```
 dataset/
-  +- instrumentals/
+  +- instruments/
   |    +- 01_foo_inst.wav
   |    +- 02_bar_inst.mp3
   |    +- ...
@@ -51,13 +54,13 @@ dataset/
 
 ### Offline data augmentation
 ```
-python augment.py -i dataset/instrumentals -m dataset/mixtures -p -1
-python augment.py -i dataset/instrumentals -m dataset/mixtures -p 1
+python augment.py -i dataset/instruments -m dataset/mixtures -p -1
+python augment.py -i dataset/instruments -m dataset/mixtures -p 1
 ```
 
 ### Train a model
 ```
-python train.py -i dataset/instrumentals -m dataset/mixtures -M 0.5 -g 0
+python train.py -i dataset/instruments -m dataset/mixtures -M 0.5 -g 0
 ```
 
 ## References
