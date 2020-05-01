@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-The following command separates the input into instrumental and vocal tracks. They are saved as `*_Instrumental.wav` and `*_Vocal.wav`.
+The following command separates the input into instrumental and vocal tracks. They are saved as `*_Instruments.wav` and `*_Vocals.wav`.
 
 ### Run on CPU
 ```

@@ -5,29 +5,6 @@ import torch.nn.functional as F
 from lib import spec_utils
 
 
-class CBAM(nn.Module):
-
-    def __init__(self, ch, ratio=16):
-        super(CBAM, self).__init__()
-        self.sqz = nn.Linear(ch, ch // ratio)
-        self.ext = nn.Linear(ch // ratio, ch)
-        self.conv = nn.Conv2d(None, 1, 3, 1, 1, bias=False)
-
-    def __call__(self, x, e=None):
-        gap = x.mean(dim=(2, 3))
-        gmp = x.max(dim=(2, 3))
-        gap = self.ext(F.relu(self.sqz(gap)))
-        gmp = self.ext(F.relu(self.sqz(gmp)))
-        x = F.sigmoid(gap + gmp)[:, :, None, None] * x
-
-        gap = x.mean(dim=1)[:, None]
-        gmp = x.max(dim=1)[:, None]
-        h = self.conv(torch.cat([gap, gmp], dim=1))
-        h = F.sigmoid(h) * x
-
-        return h
-
-
 class Conv2DBNActiv(nn.Module):
 
     def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ=nn.ReLU):
@@ -110,7 +87,7 @@ class Decoder(nn.Module):
 
 class ASPPModule(nn.Module):
 
-    def __init__(self, nin, dilations=(4, 8, 16)):
+    def __init__(self, nin, nout, dilations=(4, 8, 16)):
         super(ASPPModule, self).__init__()
         self.conv1 = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, None)),
@@ -124,7 +101,7 @@ class ASPPModule(nn.Module):
         self.conv5 = SeperableConv2DBNActiv(
             nin, nin, 3, 1, dilations[2], dilations[2])
         self.bottleneck = nn.Sequential(
-            Conv2DBNActiv(nin * 5, nin, 1, 1, 0),
+            Conv2DBNActiv(nin * 5, nout, 1, 1, 0),
             nn.Dropout2d(0.1)
         )
 
