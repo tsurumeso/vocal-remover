@@ -49,12 +49,14 @@ def mask_uninformative(mask, ref, thres=0.3, min_range=64, fade_area=32):
                 s = old_e - fade_area * 2
             elif s != 0:
                 start_mask = mask[:, :, s:s + fade_area]
-                np.clip(start_mask + np.linspace(0, 1, fade_area), 0, 1,
-                        out=start_mask)
+                np.clip(
+                    start_mask + np.linspace(0, 1, fade_area), 0, 1,
+                    out=start_mask)
             if e != mask.shape[2]:
                 end_mask = mask[:, :, e - fade_area:e]
-                np.clip(end_mask + np.linspace(1, 0, fade_area), 0, 1,
-                        out=end_mask)
+                np.clip(
+                    end_mask + np.linspace(1, 0, fade_area), 0, 1,
+                    out=end_mask)
             mask[:, :, s + fade_area:e - fade_area] = 1
             old_e = e
 

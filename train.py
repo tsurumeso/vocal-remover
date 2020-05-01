@@ -60,16 +60,16 @@ def train_inner_epoch(X_train, y_train, model, optimizer, batchsize):
         model.zero_grad()
         mask, aux = model(X_batch)
 
-        aux_loss = aux_crit(X_batch * aux, y_batch)
         X_batch = spec_utils.crop_center(mask, X_batch, False)
         y_batch = spec_utils.crop_center(mask, y_batch, False)
-        abs_diff = criterion(X_batch * mask, y_batch)
+        base_loss = criterion(X_batch * mask, y_batch)
+        aux_loss = aux_crit(X_batch * aux, y_batch)
 
-        loss = abs_diff.mean() * 0.9 + aux_loss * 0.1
+        loss = base_loss.mean() * 0.9 + aux_loss * 0.1
         loss.backward()
         optimizer.step()
 
-        abs_diff_np = abs_diff.detach().cpu().numpy()
+        abs_diff_np = base_loss.detach().cpu().numpy()
         instance_loss[local_perm] = abs_diff_np.mean(axis=(1, 2, 3))
         sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
 
@@ -100,8 +100,8 @@ def main():
     p.add_argument('--seed', '-s', type=int, default=2019)
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--hop_length', '-l', type=int, default=1024)
-    p.add_argument('--mixture_dataset', '-m', required=True)
-    p.add_argument('--instrumental_dataset', '-i', required=True)
+    p.add_argument('--mixtures', '-m', required=True)
+    p.add_argument('--instruments', '-i', required=True)
     p.add_argument('--learning_rate', type=float, default=0.001)
     p.add_argument('--lr_min', type=float, default=0.0001)
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
@@ -113,7 +113,7 @@ def main():
     p.add_argument('--val_batchsize', '-b', type=int, default=4)
     p.add_argument('--val_cropsize', '-C', type=int, default=512)
     p.add_argument('--patches', '-p', type=int, default=16)
-    p.add_argument('--epoch', '-E', type=int, default=100)
+    p.add_argument('--epoch', '-E', type=int, default=80)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
     p.add_argument('--oracle_rate', '-O', type=float, default=0)
     p.add_argument('--oracle_drop_rate', '-o', type=float, default=0.5)
@@ -143,8 +143,8 @@ def main():
         verbose=True)
 
     train_filelist, val_filelist = train_val_split(
-        mix_dir=args.mixture_dataset,
-        inst_dir=args.instrumental_dataset,
+        mix_dir=args.mixtures,
+        inst_dir=args.instruments,
         val_rate=args.val_rate,
         val_filelist_json=args.val_filelist)
 
