@@ -8,6 +8,7 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.utils.data
 
 from lib import dataset
 from lib import nets
