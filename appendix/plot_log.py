@@ -9,7 +9,7 @@ if __name__ == '__main__':
     with open(sys.argv[1], 'r', encoding='utf8') as f:
         log = np.asarray(json.load(f))
     print(np.min(log, axis=0))
-    log = log[:(log.shape[0] // 4) * 4]
+    log = log[:(log.shape[0] // 4) * 4] * 1000
     split_trn = np.array_split(log[:, 0], log.shape[0] // 4)
     split_val = np.array_split(log[:, 1], log.shape[0] // 4)
 
@@ -34,6 +34,6 @@ if __name__ == '__main__':
 
     plt.grid(which='both', color='gray', linestyle='--')
     plt.xlabel('Epoch')
-    plt.ylabel('Loss')
+    plt.ylabel('MAE [10e-3]')
     plt.legend(edgecolor='white')
     plt.show()

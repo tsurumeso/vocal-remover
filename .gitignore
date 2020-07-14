@@ -4,7 +4,6 @@
 *.pth
 *.json
 
-*.jpg
 *.png
 
 *.wav
