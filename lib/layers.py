@@ -76,8 +76,7 @@ class Decoder(nn.Module):
     def __call__(self, x, skip=None):
         x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
         if skip is not None:
-            skip = spec_utils.crop_center(skip, x)
-            x = torch.cat([x, skip], dim=1)
+            x = spec_utils.crop_center(x, skip)
         h = self.conv(x)
 
         if self.dropout is not None:
