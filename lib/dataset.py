@@ -100,14 +100,6 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset
         (len_dataset, 2, n_fft // 2 + 1, cropsize), dtype=np.complex64)
 
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
-        p = np.random.uniform()
-        if p < 0.1:
-            X_path.replace(os.path.splitext(X_path)[1], '_pitch-1.wav')
-            y_path.replace(os.path.splitext(y_path)[1], '_pitch-1.wav')
-        elif p < 0.2:
-            X_path.replace(os.path.splitext(X_path)[1], '_pitch1.wav')
-            y_path.replace(os.path.splitext(y_path)[1], '_pitch1.wav')
-
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
         coef = np.max([X.max(), y.max()])
         X, y = X / coef, y / coef

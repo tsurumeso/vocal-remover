@@ -34,11 +34,6 @@ python inference.py --input path/to/an/audio/file --gpu 0
 
 ## Train your own model
 
-### Install SoundStretch
-```
-sudo apt install soundstretch
-```
-
 ### Place your dataset
 ```
 dataset/
@@ -50,12 +45,6 @@ dataset/
        +- 01_foo_mix.wav
        +- 02_bar_mix.mp3
        +- ...
-```
-
-### Offline data augmentation
-```
-python augment.py -i dataset/instruments -m dataset/mixtures -p -1
-python augment.py -i dataset/instruments -m dataset/mixtures -p 1
 ```
 
 ### Train a model
