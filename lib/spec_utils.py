@@ -59,9 +59,12 @@ def spectrogram_to_image(spec, mode='magnitude'):
     return img
 
 
-def mask_uninformative(mask, ref, thres=0.3, min_range=64, fade_area=32):
-    if min_range < fade_area * 2:
+def mask_uninformative(mask, ref, thres=0.1, min_range=64, fade_size=32):
+    if min_range < fade_size * 2:
         raise ValueError('min_range must be >= fade_area * 2')
+
+    mask = mask.copy()
+
     idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
     starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
     ends = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
@@ -71,19 +74,22 @@ def mask_uninformative(mask, ref, thres=0.3, min_range=64, fade_area=32):
         ends = ends[uninformative]
         old_e = None
         for s, e in zip(starts, ends):
-            if old_e is not None and s - old_e < fade_area:
-                s = old_e - fade_area * 2
-            elif s != 0:
-                start_mask = mask[:, :, s:s + fade_area]
-                np.clip(
-                    start_mask + np.linspace(0, 1, fade_area), 0, 1,
-                    out=start_mask)
+            if old_e is not None and s - old_e < fade_size:
+                s = old_e - fade_size * 2
+
+            if s != 0:
+                weight = np.linspace(0, 1, fade_size)
+                mask[:, :, s:s + fade_size] += weight * ref[:, :, s:s + fade_size]
+            else:
+                s -= fade_size
+
             if e != mask.shape[2]:
-                end_mask = mask[:, :, e - fade_area:e]
-                np.clip(
-                    end_mask + np.linspace(1, 0, fade_area), 0, 1,
-                    out=end_mask)
-            mask[:, :, s + fade_area:e - fade_area] = 1
+                weight = np.linspace(1, 0, fade_size)
+                mask[:, :, e - fade_size:e] += weight * ref[:, :, e - fade_size:e]
+            else:
+                e += fade_size
+
+            mask[:, :, s + fade_size:e - fade_size] += ref[:, :, s + fade_size:e - fade_size]
             old_e = e
 
     return mask

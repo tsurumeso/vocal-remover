@@ -47,6 +47,7 @@ def main():
     p.add_argument('--hop_length', '-l', type=int, default=1024)
     p.add_argument('--window_size', '-w', type=int, default=512)
     p.add_argument('--output_image', '-I', action='store_true')
+    p.add_argument('--postprocess', '-p', action='store_true')
     args = p.parse_args()
 
     print('loading model...', end=' ')
@@ -70,6 +71,12 @@ def main():
     print('done')
 
     pred = reconstruct(X_mag, args.window_size, model, device)
+
+    if args.postprocess:
+        print('post processing...', end=' ')
+        pred_inv = np.clip(X_mag - pred, 0, np.inf)
+        pred = spec_utils.mask_uninformative(pred, pred_inv)
+        print('done')
 
     print('inverse stft of instruments...', end=' ')
     y_spec = pred * np.exp(1.j * X_phase)
