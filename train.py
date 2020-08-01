@@ -1,5 +1,5 @@
 import argparse
-from datetime import datetime as dt
+from datetime import datetime
 import gc
 import json
 import os
@@ -15,82 +15,60 @@ from lib import nets
 from lib import spec_utils
 
 
-def train_val_split(mix_dir, inst_dir, val_rate, val_filelist_json):
-    input_exts = ['.wav', '.m4a', '.3gp', '.oma', '.mp3', '.mp4']
-    X_list = sorted([
-        os.path.join(mix_dir, fname)
-        for fname in os.listdir(mix_dir)
-        if os.path.splitext(fname)[1] in input_exts])
-    y_list = sorted([
-        os.path.join(inst_dir, fname)
-        for fname in os.listdir(inst_dir)
-        if os.path.splitext(fname)[1] in input_exts])
-
-    filelist = list(zip(X_list, y_list))
-    random.shuffle(filelist)
-
-    val_filelist = []
-    if val_filelist_json is not None:
-        with open(val_filelist_json, 'r', encoding='utf8') as f:
-            val_filelist = json.load(f)
-
-    if len(val_filelist) == 0:
-        val_size = int(len(filelist) * val_rate)
-        train_filelist = filelist[:-val_size]
-        val_filelist = filelist[-val_size:]
-    else:
-        train_filelist = [
-            pair for pair in filelist
-            if list(pair) not in val_filelist]
-
-    return train_filelist, val_filelist
-
-
-def train_inner_epoch(X_train, y_train, model, optimizer, batchsize):
-    sum_loss = 0
+def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate, reduction_mask):
     model.train()
+    sum_loss = 0
+    crit = nn.L1Loss()
     aux_crit = nn.L1Loss()
-    criterion = nn.L1Loss(reduction='none')
-    perm = np.random.permutation(len(X_train))
-    instance_loss = np.zeros(len(X_train), dtype=np.float32)
-    for i in range(0, len(X_train), batchsize):
+    perm = np.random.permutation(len(X))
+
+    for i in range(0, len(X), batchsize):
         local_perm = perm[i: i + batchsize]
-        X_batch = torch.from_numpy(X_train[local_perm]).cuda()
-        y_batch = torch.from_numpy(y_train[local_perm]).cuda()
+
+        X_batch = X[local_perm]
+        y_batch = y[local_perm]
+
+        X_mag = np.abs(X_batch)
+        y_mag = np.abs(y_batch)
+        v_mag = np.abs(X_batch - y_batch)
+
+        reduction_rate = np.random.uniform(0, max_reduction_rate, len(X_batch))
+        v_mag *= (v_mag > y_mag) * reduction_rate[:, None, None, None] * reduction_mask
+
+        X_mag = torch.from_numpy(X_mag).cuda()
+        y_mag_org = torch.from_numpy(y_mag).cuda()
+        y_mag_sub = torch.from_numpy(np.clip(y_mag - v_mag, 0, np.inf)).cuda()
 
         model.zero_grad()
-        mask, aux = model(X_batch)
+        pred, aux = model(X_mag)
 
-        X_batch = spec_utils.crop_center(mask, X_batch, False)
-        y_batch = spec_utils.crop_center(mask, y_batch, False)
-        base_loss = criterion(X_batch * mask, y_batch)
-        aux_loss = aux_crit(X_batch * aux, y_batch)
+        loss = crit(pred, y_mag_sub) * 0.9
+        loss += aux_crit(aux, y_mag_org) * 0.1
 
-        loss = base_loss.mean() * 0.9 + aux_loss * 0.1
         loss.backward()
         optimizer.step()
 
-        abs_diff_np = base_loss.detach().cpu().numpy()
-        instance_loss[local_perm] = abs_diff_np.mean(axis=(1, 2, 3))
-        sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
+        sum_loss += loss.item() * len(X_batch)
 
-    return sum_loss / len(X_train), instance_loss
+    return sum_loss / len(X)
 
 
 def val_inner_epoch(dataloader, model):
-    sum_loss = 0
     model.eval()
-    criterion = nn.L1Loss()
+    sum_loss = 0
+    crit = nn.L1Loss()
+
     with torch.no_grad():
         for X_batch, y_batch in dataloader:
             X_batch = X_batch.cuda()
             y_batch = y_batch.cuda()
-            mask = model.predict(X_batch)
-            X_batch = spec_utils.crop_center(mask, X_batch, False)
-            y_batch = spec_utils.crop_center(mask, y_batch, False)
 
-            loss = criterion(X_batch * mask, y_batch)
-            sum_loss += float(loss.detach().cpu().numpy()) * len(X_batch)
+            pred = model.predict(X_batch)
+
+            y_batch = spec_utils.crop_center(y_batch, pred)
+            loss = crit(pred, y_batch)
+
+            sum_loss += loss.item() * len(X_batch)
 
     return sum_loss / len(dataloader.dataset)
 
@@ -101,23 +79,23 @@ def main():
     p.add_argument('--seed', '-s', type=int, default=2019)
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--hop_length', '-l', type=int, default=1024)
+    p.add_argument('--n_fft', '-f', type=int, default=2048)
     p.add_argument('--mixtures', '-m', required=True)
     p.add_argument('--instruments', '-i', required=True)
-    p.add_argument('--learning_rate', type=float, default=0.001)
+    p.add_argument('--learning_rate', '-L', type=float, default=0.001)
     p.add_argument('--lr_min', type=float, default=0.0001)
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
     p.add_argument('--lr_decay_patience', type=int, default=6)
     p.add_argument('--batchsize', '-B', type=int, default=4)
     p.add_argument('--cropsize', '-c', type=int, default=256)
+    p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--val_rate', '-v', type=float, default=0.1)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
-    p.add_argument('--val_batchsize', '-b', type=int, default=4)
+    p.add_argument('--val_batchsize', '-b', type=int, default=2)
     p.add_argument('--val_cropsize', '-C', type=int, default=512)
-    p.add_argument('--patches', '-p', type=int, default=16)
-    p.add_argument('--epoch', '-E', type=int, default=80)
+    p.add_argument('--epoch', '-E', type=int, default=60)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
-    p.add_argument('--oracle_rate', '-O', type=float, default=0)
-    p.add_argument('--oracle_drop_rate', '-o', type=float, default=0.5)
+    p.add_argument('--max_reduction_rate', '-R', type=float, default=0.15)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
@@ -127,76 +105,105 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    timestamp = dt.now().strftime('%Y%m%d%H%M%S')
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
 
-    model = nets.CascadedASPPNet()
-    if args.pretrained_model is not None:
-        model.load_state_dict(torch.load(args.pretrained_model))
-    if args.gpu >= 0:
-        model.cuda()
+    val_filelist = []
+    if args.val_filelist is not None:
+        with open(args.val_filelist, 'r', encoding='utf8') as f:
+            val_filelist = json.load(f)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        factor=args.lr_decay_factor,
-        patience=args.lr_decay_patience,
-        min_lr=args.lr_min,
-        verbose=True)
-
-    train_filelist, val_filelist = train_val_split(
+    train_filelist, val_filelist = dataset.train_val_split(
         mix_dir=args.mixtures,
         inst_dir=args.instruments,
         val_rate=args.val_rate,
-        val_filelist_json=args.val_filelist)
+        val_filelist=val_filelist)
 
     if args.debug:
         print('### DEBUG MODE')
         train_filelist = train_filelist[:1]
         val_filelist = val_filelist[:1]
-
-    with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
-        json.dump(val_filelist, f, ensure_ascii=False)
+    elif args.val_filelist is None:
+        with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
+            json.dump(val_filelist, f, ensure_ascii=False)
 
     for i, (X_fname, y_fname) in enumerate(val_filelist):
         print(i + 1, os.path.basename(X_fname), os.path.basename(y_fname))
+
+    model = nets.CascadedASPPNet(args.n_fft)
+    if args.pretrained_model is not None:
+        model.load_state_dict(torch.load(args.pretrained_model))
+    if args.gpu >= 0:
+        model.cuda()
+
+    optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=args.learning_rate)
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        factor=args.lr_decay_factor,
+        patience=args.lr_decay_patience,
+        threshold=1e-6,
+        min_lr=args.lr_min,
+        verbose=True)
 
     val_dataset = dataset.make_validation_set(
         filelist=val_filelist,
         cropsize=args.val_cropsize,
         sr=args.sr,
         hop_length=args.hop_length,
+        n_fft=args.n_fft,
         offset=model.offset)
+
     val_dataloader = torch.utils.data.DataLoader(
         dataset=val_dataset,
         batch_size=args.val_batchsize,
         shuffle=False,
         num_workers=4)
 
+    bins = args.n_fft // 2 + 1
+    freq_to_bin = 2 * bins / args.sr
+    unstable_bins = int(110 * freq_to_bin)
+    reduction_bins = int(11025 * freq_to_bin)
+    reduction_mask = np.concatenate([
+        np.linspace(0, 1, unstable_bins)[:, None],
+        np.linspace(1, 0, reduction_bins - unstable_bins)[:, None],
+        np.zeros((bins - reduction_bins, 1))
+    ], axis=0)
+
     log = []
-    oracle_X = None
-    oracle_y = None
     best_loss = np.inf
     for epoch in range(args.epoch):
         X_train, y_train = dataset.make_training_set(
-            train_filelist, args.cropsize, args.patches, args.sr, args.hop_length, model.offset)
+            filelist=train_filelist,
+            cropsize=args.cropsize,
+            patches=args.patches,
+            sr=args.sr,
+            hop_length=args.hop_length,
+            n_fft=args.n_fft,
+            offset=model.offset)
 
         X_train, y_train = dataset.mixup_generator(
-            X_train, y_train, args.mixup_rate, args.mixup_alpha)
-
-        if oracle_X is not None and oracle_y is not None:
-            perm = np.random.permutation(len(X_train))[:len(oracle_X)]
-            X_train[perm] = oracle_X
-            y_train[perm] = oracle_y
+            X_train, y_train,
+            rate=args.mixup_rate,
+            alpha=args.mixup_alpha)
 
         print('# epoch', epoch)
         for inner_epoch in range(args.inner_epoch):
             print('  * inner epoch {}'.format(inner_epoch))
-            train_loss, instance_loss = train_inner_epoch(
-                X_train, y_train, model, optimizer, args.batchsize)
+
+            train_loss = train_inner_epoch(
+                X_train, y_train,
+                model=model,
+                optimizer=optimizer,
+                batchsize=args.batchsize,
+                max_reduction_rate=args.max_reduction_rate,
+                reduction_mask=reduction_mask)
+
             val_loss = val_inner_epoch(val_dataloader, model)
 
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
-                  .format(train_loss * 1000, val_loss * 1000))
+                  .format(train_loss, val_loss))
 
             scheduler.step(val_loss)
 
@@ -209,11 +216,6 @@ def main():
             log.append([train_loss, val_loss])
             with open('log_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
                 json.dump(log, f, ensure_ascii=False)
-
-        if args.oracle_rate > 0:
-            oracle_X, oracle_y, idx = dataset.get_oracle_data(
-                X_train, y_train, instance_loss, args.oracle_rate, args.oracle_drop_rate)
-            print('  * oracle loss = {:.6f}'.format(instance_loss[idx].mean() * 1000))
 
         del X_train, y_train
         gc.collect()
