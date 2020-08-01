@@ -28,7 +28,7 @@ class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
 
 def make_pair(mix_dir, inst_dir):
-    input_exts = ['.wav', '.m4a', '.3gp', '.oma', '.mp3', '.mp4']
+    input_exts = ['.wav', '.m4a', '.mp3', '.mp4', '.flac']
 
     X_list = sorted([
         os.path.join(mix_dir, fname)
@@ -132,8 +132,8 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset
 
 def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
     patch_list = []
-    outdir = 'cs{}_sr{}_hl{}_nf{}_of{}'.format(cropsize, sr, hop_length, n_fft, offset)
-    os.makedirs(outdir, exist_ok=True)
+    patch_dir = 'cs{}_sr{}_hl{}_nf{}_of{}'.format(cropsize, sr, hop_length, n_fft, offset)
+    os.makedirs(patch_dir, exist_ok=True)
 
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
         basename = os.path.splitext(os.path.basename(X_path))[0]
@@ -148,7 +148,7 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
 
         len_dataset = int(np.ceil(X.shape[2] / roi_size))
         for j in range(len_dataset):
-            outpath = os.path.join(outdir, '{}_p{}.npz'.format(basename, j))
+            outpath = os.path.join(patch_dir, '{}_p{}.npz'.format(basename, j))
             start = j * roi_size
             if not os.path.exists(outpath):
                 np.savez(

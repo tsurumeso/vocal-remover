@@ -7,6 +7,7 @@ import numpy as np
 import soundfile as sf
 from tqdm import tqdm
 
+from lib import dataset
 from lib import spec_utils
 
 
@@ -20,38 +21,29 @@ if __name__ == '__main__':
     p.add_argument('--instruments', '-i', required=True)
     args = p.parse_args()
 
-    input_exts = ['.wav', '.m4a', '.3gp', '.oma', '.mp3', '.mp4']
-    X_list = sorted([
-        os.path.join(args.mixtures, fname)
-        for fname in os.listdir(args.mixtures)
-        if os.path.splitext(fname)[1] in input_exts])
-    y_list = sorted([
-        os.path.join(args.instruments, fname)
-        for fname in os.listdir(args.instruments)
-        if os.path.splitext(fname)[1] in input_exts])
-
     input_i = 'input_i_{}.wav'.format(args.pitch)
     input_v = 'input_v_{}.wav'.format(args.pitch)
     output_i = 'output_i_{}.wav'.format(args.pitch)
     output_v = 'output_v_{}.wav'.format(args.pitch)
     cmd_i = 'soundstretch {} {} -pitch={}'.format(input_i, output_i, args.pitch)
     cmd_v = 'soundstretch {} {} -pitch={}'.format(input_v, output_v, args.pitch)
-    suffix = '_pitch{}.npy'.format(args.pitch)
+    cache_suffix = '_pitch{}.npy'.format(args.pitch)
 
-    outdir = 'sr{}_hl{}_nf{}'.format(args.sr, args. hop_length, args.n_fft)
-    mix_outdir = os.path.join(args.mixtures, outdir)
-    inst_outdir = os.path.join(args.instruments, outdir)
-    os.makedirs(mix_outdir, exist_ok=True)
-    os.makedirs(inst_outdir, exist_ok=True)
+    cache_dir = 'sr{}_hl{}_nf{}'.format(args.sr, args. hop_length, args.n_fft)
+    mix_cache_dir = os.path.join(args.mixtures, cache_dir)
+    inst_cache_dir = os.path.join(args.instruments, cache_dir)
+    os.makedirs(mix_cache_dir, exist_ok=True)
+    os.makedirs(inst_cache_dir, exist_ok=True)
 
-    filelist = list(zip(X_list, y_list))
+    filelist = dataset.make_pair(args.mixtures, args.instruments)
     for mix_path, inst_path in tqdm(filelist):
         mix_basename = os.path.splitext(os.path.basename(mix_path))[0]
-        inst_basename = os.path.splitext(os.path.basename(inst_path))[0]
-        mix_outpath = os.path.join(mix_outdir, mix_basename + suffix)
-        inst_outpath = os.path.join(inst_outdir, inst_basename + suffix)
+        mix_cache_path = os.path.join(mix_cache_dir, mix_basename + cache_suffix)
 
-        if os.path.exists(mix_outpath) and os.path.exists(inst_outpath):
+        inst_basename = os.path.splitext(os.path.basename(inst_path))[0]
+        inst_cache_path = os.path.join(inst_cache_dir, inst_basename + cache_suffix)
+
+        if os.path.exists(mix_cache_path) and os.path.exists(inst_cache_path):
             continue
 
         X, _ = librosa.load(
@@ -76,10 +68,10 @@ if __name__ == '__main__':
         X = y + v
 
         spec = spec_utils.get_spectrogram(X, args.hop_length, args.n_fft)
-        np.save(mix_outpath, spec)
+        np.save(mix_cache_path, spec)
 
         spec = spec_utils.get_spectrogram(y, args.hop_length, args.n_fft)
-        np.save(inst_outpath, spec)
+        np.save(inst_cache_path, spec)
 
         os.remove(input_i)
         os.remove(input_v)

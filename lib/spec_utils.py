@@ -125,18 +125,18 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
     mix_basename = os.path.splitext(os.path.basename(mix_path))[0]
     inst_basename = os.path.splitext(os.path.basename(inst_path))[0]
 
-    outdir = 'sr{}_hl{}_nf{}'.format(sr, hop_length, n_fft)
-    mix_dir = os.path.join(os.path.dirname(mix_path), outdir)
-    inst_dir = os.path.join(os.path.dirname(inst_path), outdir)
-    os.makedirs(mix_dir, exist_ok=True)
-    os.makedirs(inst_dir, exist_ok=True)
+    cache_dir = 'sr{}_hl{}_nf{}'.format(sr, hop_length, n_fft)
+    mix_cache_dir = os.path.join(os.path.dirname(mix_path), cache_dir)
+    inst_cache_dir = os.path.join(os.path.dirname(inst_path), cache_dir)
+    os.makedirs(mix_cache_dir, exist_ok=True)
+    os.makedirs(inst_cache_dir, exist_ok=True)
 
-    spec_mix_path = os.path.join(mix_dir, mix_basename + '.npy')
-    spec_inst_path = os.path.join(inst_dir, inst_basename + '.npy')
+    mix_cache_path = os.path.join(mix_cache_dir, mix_basename + '.npy')
+    inst_cache_path = os.path.join(inst_cache_dir, inst_basename + '.npy')
 
-    if os.path.exists(spec_mix_path) and os.path.exists(spec_inst_path):
-        X = np.load(spec_mix_path)
-        y = np.load(spec_inst_path)
+    if os.path.exists(mix_cache_path) and os.path.exists(inst_cache_path):
+        X = np.load(mix_cache_path)
+        y = np.load(inst_cache_path)
     else:
         X, _ = librosa.load(
             mix_path, sr, False, dtype=np.float32, res_type='kaiser_fast')
@@ -149,8 +149,8 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
         y = get_spectrogram(y, hop_length, n_fft)
 
         _, ext = os.path.splitext(mix_path)
-        np.save(spec_mix_path, X)
-        np.save(spec_inst_path, y)
+        np.save(mix_cache_path, X)
+        np.save(inst_cache_path, y)
 
     return X, y
 
