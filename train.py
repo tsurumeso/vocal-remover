@@ -15,18 +15,13 @@ from lib import nets
 from lib import spec_utils
 
 
-def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate):
+def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate, reduction_mask):
+    model.train()
     sum_loss = 0
     crit = nn.L1Loss()
     aux_crit = nn.L1Loss()
-
-    unstable_region_offset = 4
-    weight = np.concatenate([
-        np.zeros((unstable_region_offset, 1)),
-        np.linspace(1, 0, X.shape[2] - unstable_region_offset)[:, None]
-    ], axis=0)
-
     perm = np.random.permutation(len(X))
+
     for i in range(0, len(X), batchsize):
         local_perm = perm[i: i + batchsize]
 
@@ -38,7 +33,7 @@ def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate):
         v_mag = np.abs(X_batch - y_batch)
 
         reduction_rate = np.random.uniform(0, max_reduction_rate, len(X_batch))
-        v_mag *= (v_mag > y_mag) * reduction_rate[:, None, None, None] * weight
+        v_mag *= (v_mag > y_mag) * reduction_rate[:, None, None, None] * reduction_mask
 
         X_mag = torch.from_numpy(X_mag).cuda()
         y_mag_org = torch.from_numpy(y_mag).cuda()
@@ -59,6 +54,7 @@ def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate):
 
 
 def val_inner_epoch(dataloader, model):
+    model.eval()
     sum_loss = 0
     crit = nn.L1Loss()
 
@@ -97,7 +93,7 @@ def main():
     p.add_argument('--val_filelist', '-V', type=str, default=None)
     p.add_argument('--val_batchsize', '-b', type=int, default=2)
     p.add_argument('--val_cropsize', '-C', type=int, default=512)
-    p.add_argument('--epoch', '-E', type=int, default=50)
+    p.add_argument('--epoch', '-E', type=int, default=60)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
     p.add_argument('--max_reduction_rate', '-R', type=float, default=0.15)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
@@ -165,6 +161,16 @@ def main():
         shuffle=False,
         num_workers=4)
 
+    bins = args.n_fft // 2 + 1
+    freq_to_bin = 2 * bins / args.sr
+    unstable_bins = int(110 * freq_to_bin)
+    reduction_bins = int(11025 * freq_to_bin)
+    reduction_mask = np.concatenate([
+        np.linspace(0, 1, unstable_bins)[:, None],
+        np.linspace(1, 0, reduction_bins - unstable_bins)[:, None],
+        np.zeros((bins - reduction_bins, 1))
+    ], axis=0)
+
     log = []
     best_loss = np.inf
     for epoch in range(args.epoch):
@@ -186,15 +192,14 @@ def main():
         for inner_epoch in range(args.inner_epoch):
             print('  * inner epoch {}'.format(inner_epoch))
 
-            model.train()
             train_loss = train_inner_epoch(
                 X_train, y_train,
                 model=model,
                 optimizer=optimizer,
                 batchsize=args.batchsize,
-                max_reduction_rate=args.max_reduction_rate)
+                max_reduction_rate=args.max_reduction_rate,
+                reduction_mask=reduction_mask)
 
-            model.eval()
             val_loss = val_inner_epoch(val_dataloader, model)
 
             print('    * training loss = {:.6f}, validation loss = {:.6f}'

@@ -13,28 +13,37 @@ from lib import nets
 from lib import spec_utils
 
 
-def reconstruct(X, window_size, model, device):
+def reconstruct(X, window_size, model, device, tta=False):
     coef = X.max()
     l, r, roi_size = dataset.make_padding(X.shape[2], window_size, model.offset)
+    n_window = int(np.ceil(X.shape[2] / roi_size))
+
+    if tta:
+        l += roi_size // 2
+        r += roi_size // 2
+        n_window += 1
+
     X_pad = np.pad(X / coef, ((0, 0), (0, 0), (l, r)), mode='constant')
 
     model.eval()
     with torch.no_grad():
         preds = []
-        for i in tqdm(range(int(np.ceil(X.shape[2] / roi_size)))):
+        for i in tqdm(range(n_window)):
             start = i * roi_size
-            X_window = torch.from_numpy(
-                X_pad[None, :, :, start:start + window_size]
-            ).to(device)
+            X_window = X_pad[None, :, :, start:start + window_size]
+            X_window = torch.from_numpy(X_window).to(device)
 
             pred = model.predict(X_window)
 
             pred = pred.detach().cpu().numpy()
             preds.append(pred[0])
 
-        pred = np.concatenate(preds, axis=2)[:, :, :X.shape[2]]
+        pred = np.concatenate(preds, axis=2)
 
-    return pred * coef
+    if tta:
+        pred = pred[:, :, roi_size // 2:]
+
+    return pred[:, :, :X.shape[2]] * coef
 
 
 def main():
@@ -65,12 +74,17 @@ def main():
     basename = os.path.splitext(os.path.basename(args.input))[0]
     print('done')
 
+    if X.ndim == 1:
+        X = np.asarray([X, X])
+
     print('stft of wave source...', end=' ')
     X = spec_utils.get_spectrogram(X, args.hop_length, args.n_fft)
-    X_mag, X_phase = np.abs(X), np.angle(X)
+    X_mag, X_phase = np.abs(X), np.exp(1.j * np.angle(X))
     print('done')
 
     pred = reconstruct(X_mag, args.window_size, model, device)
+    pred += reconstruct(X_mag, args.window_size, model, device, True)
+    pred /= 2
 
     if args.postprocess:
         print('post processing...', end=' ')
@@ -79,13 +93,13 @@ def main():
         print('done')
 
     print('inverse stft of instruments...', end=' ')
-    y_spec = pred * np.exp(1.j * X_phase)
+    y_spec = pred * X_phase
     wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
     print('done')
     sf.write('{}_Instruments.wav'.format(basename), wave.T, sr)
 
     print('inverse stft of vocals...', end=' ')
-    v_spec = np.clip(X_mag - pred, 0, np.inf) * np.exp(1.j * X_phase)
+    v_spec = np.clip(X_mag - pred, 0, np.inf) * X_phase
     wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
     print('done')
     sf.write('{}_Vocals.wav'.format(basename), wave.T, sr)
