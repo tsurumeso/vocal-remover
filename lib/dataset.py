@@ -114,10 +114,18 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset
             idx = i * patches + j
             X_dataset[idx] = X_pad[:, :, starts[j]:ends[j]]
             y_dataset[idx] = y_pad[:, :, starts[j]:ends[j]]
-            if np.random.uniform() < 0.5:
+            p = np.random.uniform()
+            if p < 0.5:
                 # swap channel
                 X_dataset[idx] = X_dataset[idx, ::-1]
                 y_dataset[idx] = y_dataset[idx, ::-1]
+            elif p < 0.52:
+                # mono
+                X_dataset[idx] = X_dataset[idx].mean(axis=0, keepdims=True)
+                y_dataset[idx] = y_dataset[idx].mean(axis=0, keepdims=True)
+            elif p < 0.54:
+                # inst
+                X_dataset[idx] = y_dataset[idx]
 
     return X_dataset, y_dataset
 
