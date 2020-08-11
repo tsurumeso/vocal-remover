@@ -101,7 +101,7 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset
 
     for i, (X_path, y_path) in enumerate(tqdm(filelist)):
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
-        coef = np.max([X.max(), y.max()])
+        coef = np.max([np.abs(X).max(), np.abs(y).max()])
         X, y = X / coef, y / coef
 
         l, r, roi_size = make_padding(X.shape[2], cropsize, offset)
@@ -139,7 +139,7 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
         basename = os.path.splitext(os.path.basename(X_path))[0]
 
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
-        coef = np.max([X.max(), y.max()])
+        coef = np.max([np.abs(X).max(), np.abs(y).max()])
         X, y = X / coef, y / coef
 
         l, r, roi_size = make_padding(X.shape[2], cropsize, offset)
