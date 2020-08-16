@@ -49,7 +49,7 @@ dataset/
 
 ### Train a model
 ```
-python train.py -i dataset/instruments -m dataset/mixtures -M 0.5 -g 0
+python train.py --instruments dataset/instruments --mixtures dataset/mixtures --mixup_rate 0.5 --gpu 0
 ```
 
 ## References
