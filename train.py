@@ -15,7 +15,8 @@ from lib import nets
 from lib import spec_utils
 
 
-def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate, reduction_mask):
+def train_inner_epoch(
+        X, y, model, device, optimizer, batchsize, max_reduction_rate, reduction_mask):
     model.train()
     sum_loss = 0
     crit = nn.L1Loss()
@@ -35,9 +36,9 @@ def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate, red
         reduction_rate = np.random.uniform(0, max_reduction_rate, len(X_batch))
         v_mag *= (v_mag > y_mag) * reduction_rate[:, None, None, None] * reduction_mask
 
-        X_mag = torch.from_numpy(X_mag).cuda()
-        y_mag_org = torch.from_numpy(y_mag).cuda()
-        y_mag_sub = torch.from_numpy(np.clip(y_mag - v_mag, 0, np.inf)).cuda()
+        X_mag = torch.from_numpy(X_mag).to(device)
+        y_mag_org = torch.from_numpy(y_mag).to(device)
+        y_mag_sub = torch.from_numpy(np.clip(y_mag - v_mag, 0, np.inf)).to(device)
 
         model.zero_grad()
         pred, aux = model(X_mag)
@@ -53,15 +54,15 @@ def train_inner_epoch(X, y, model, optimizer, batchsize, max_reduction_rate, red
     return sum_loss / len(X)
 
 
-def val_inner_epoch(dataloader, model):
+def val_inner_epoch(dataloader, model, device):
     model.eval()
     sum_loss = 0
     crit = nn.L1Loss()
 
     with torch.no_grad():
         for X_batch, y_batch in dataloader:
-            X_batch = X_batch.cuda()
-            y_batch = y_batch.cuda()
+            X_batch = X_batch.to(device)
+            y_batch = y_batch.to(device)
 
             pred = model.predict(X_batch)
 
@@ -129,11 +130,13 @@ def main():
     for i, (X_fname, y_fname) in enumerate(val_filelist):
         print(i + 1, os.path.basename(X_fname), os.path.basename(y_fname))
 
+    device = torch.device('cpu')
     model = nets.CascadedASPPNet(args.n_fft)
     if args.pretrained_model is not None:
-        model.load_state_dict(torch.load(args.pretrained_model))
-    if args.gpu >= 0:
-        model.cuda()
+        model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
+    if torch.cuda.is_available() and args.gpu >= 0:
+        device = torch.device('cuda:{}'.format(args.gpu))
+        model.to(device)
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -195,12 +198,13 @@ def main():
             train_loss = train_inner_epoch(
                 X_train, y_train,
                 model=model,
+                device=device,
                 optimizer=optimizer,
                 batchsize=args.batchsize,
                 max_reduction_rate=args.max_reduction_rate,
                 reduction_mask=reduction_mask)
 
-            val_loss = val_inner_epoch(val_dataloader, model)
+            val_loss = val_inner_epoch(val_dataloader, model, device)
 
             print('    * training loss = {:.6f}, validation loss = {:.6f}'
                   .format(train_loss, val_loss))
