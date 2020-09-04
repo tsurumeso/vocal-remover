@@ -40,7 +40,7 @@ def spectrogram_to_image(spec, mode='magnitude'):
             y = np.abs(spec)
         else:
             y = spec
-        y = np.log(y ** 2 + 1e-8)
+        y = np.log10(y ** 2 + 1e-8)
     elif mode == 'phase':
         if np.iscomplexobj(spec):
             y = np.angle(spec)
