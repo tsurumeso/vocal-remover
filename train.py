@@ -15,12 +15,10 @@ from lib import nets
 from lib import spec_utils
 
 
-def train_inner_epoch(
-        X, y, model, device, optimizer, batchsize, max_reduction_rate, reduction_mask):
+def train_inner_epoch(X, y, model, device, optimizer, batchsize):
     model.train()
     sum_loss = 0
     crit = nn.L1Loss()
-    aux_crit = nn.L1Loss()
     perm = np.random.permutation(len(X))
 
     for i in range(0, len(X), batchsize):
@@ -31,20 +29,15 @@ def train_inner_epoch(
 
         X_mag = np.abs(X_batch)
         y_mag = np.abs(y_batch)
-        v_mag = np.abs(X_batch - y_batch)
-
-        reduction_rate = np.random.uniform(0, max_reduction_rate, len(X_batch))
-        v_mag *= (v_mag > y_mag) * reduction_rate[:, None, None, None] * reduction_mask
 
         X_mag = torch.from_numpy(X_mag).to(device)
-        y_mag_org = torch.from_numpy(y_mag).to(device)
-        y_mag_sub = torch.from_numpy(np.clip(y_mag - v_mag, 0, np.inf)).to(device)
+        y_mag = torch.from_numpy(y_mag).to(device)
 
         model.zero_grad()
         pred, aux = model(X_mag)
 
-        loss = crit(pred, y_mag_sub) * 0.9
-        loss += aux_crit(aux, y_mag_org) * 0.1
+        loss = crit(pred, y_mag) * 0.9
+        loss += crit(aux, y_mag) * 0.1
 
         loss.backward()
         optimizer.step()
@@ -90,17 +83,17 @@ def main():
     p.add_argument('--batchsize', '-B', type=int, default=4)
     p.add_argument('--cropsize', '-c', type=int, default=256)
     p.add_argument('--patches', '-p', type=int, default=16)
-    p.add_argument('--val_rate', '-v', type=float, default=0.1)
+    p.add_argument('--val_rate', '-v', type=float, default=0.2)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
     p.add_argument('--val_batchsize', '-b', type=int, default=2)
     p.add_argument('--val_cropsize', '-C', type=int, default=512)
     p.add_argument('--epoch', '-E', type=int, default=60)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
-    p.add_argument('--max_reduction_rate', '-R', type=float, default=0.15)
+    p.add_argument('--max_reduction_rate', '-R', type=float, default=0.0)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
-    p.add_argument('--debug', '-d', action='store_true')
+    p.add_argument('--debug', action='store_true')
     args = p.parse_args()
 
     random.seed(args.seed)
@@ -186,10 +179,12 @@ def main():
             n_fft=args.n_fft,
             offset=model.offset)
 
-        X_train, y_train = dataset.mixup_generator(
+        X_train, y_train = dataset.augment(
             X_train, y_train,
-            rate=args.mixup_rate,
-            alpha=args.mixup_alpha)
+            max_reduction_rate=args.max_reduction_rate,
+            reduction_mask=reduction_mask,
+            mixup_rate=args.mixup_rate,
+            mixup_alpha=args.mixup_alpha)
 
         print('# epoch', epoch)
         for inner_epoch in range(args.inner_epoch):
@@ -200,9 +195,7 @@ def main():
                 model=model,
                 device=device,
                 optimizer=optimizer,
-                batchsize=args.batchsize,
-                max_reduction_rate=args.max_reduction_rate,
-                reduction_mask=reduction_mask)
+                batchsize=args.batchsize)
 
             val_loss = val_inner_epoch(val_dataloader, model, device)
 
