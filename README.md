@@ -36,7 +36,7 @@ python inference.py --input path/to/an/audio/file --gpu 0
 
 ### Place your dataset
 ```
-dataset/
+path/to/dataset/
   +- instruments/
   |    +- 01_foo_inst.wav
   |    +- 02_bar_inst.mp3
@@ -49,7 +49,7 @@ dataset/
 
 ### Train a model
 ```
-python train.py --instruments dataset/instruments --mixtures dataset/mixtures --mixup_rate 0.5 --gpu 0
+python train.py --dataset path/to/dataset --max_reduction_rate 0.1 --mixup_rate 0.5 --gpu 0
 ```
 
 ## References

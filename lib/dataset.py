@@ -46,18 +46,33 @@ def make_pair(mix_dir, inst_dir):
     return filelist
 
 
-def train_val_split(mix_dir, inst_dir, val_rate, val_filelist):
-    filelist = make_pair(mix_dir, inst_dir)
-    random.shuffle(filelist)
+def train_val_split(split_mode, dataset_dir, val_rate, val_filelist):
+    if split_mode == 'random':
+        filelist = make_pair(
+            os.path.join(dataset_dir, 'mixtures'),
+            os.path.join(dataset_dir, 'instruments'))
 
-    if len(val_filelist) == 0:
-        val_size = int(len(filelist) * val_rate)
-        train_filelist = filelist[:-val_size]
-        val_filelist = filelist[-val_size:]
-    else:
-        train_filelist = [
-            pair for pair in filelist
-            if list(pair) not in val_filelist]
+        random.shuffle(filelist)
+
+        if len(val_filelist) == 0:
+            val_size = int(len(filelist) * val_rate)
+            train_filelist = filelist[:-val_size]
+            val_filelist = filelist[-val_size:]
+        else:
+            train_filelist = [
+                pair for pair in filelist
+                if list(pair) not in val_filelist]
+    elif split_mode == 'subdirs':
+        if len(val_filelist) != 0:
+            raise ValueError('The `val_filelist` option is not available in `subdirs` mode')
+
+        train_filelist = make_pair(
+            os.path.join(dataset_dir, 'training/mixtures'),
+            os.path.join(dataset_dir, 'training/instruments'))
+
+        val_filelist = make_pair(
+            os.path.join(dataset_dir, 'validation/mixtures'),
+            os.path.join(dataset_dir, 'validation/instruments'))
 
     return train_filelist, val_filelist
 

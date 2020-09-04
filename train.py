@@ -74,8 +74,8 @@ def main():
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--hop_length', '-l', type=int, default=1024)
     p.add_argument('--n_fft', '-f', type=int, default=2048)
-    p.add_argument('--mixtures', '-m', required=True)
-    p.add_argument('--instruments', '-i', required=True)
+    p.add_argument('--dataset', '-d', required=True)
+    p.add_argument('--split_mode', '-S', type=str, choices=['random', 'subdirs'], default='random')
     p.add_argument('--learning_rate', '-L', type=float, default=0.001)
     p.add_argument('--lr_min', type=float, default=0.0001)
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
@@ -107,8 +107,8 @@ def main():
             val_filelist = json.load(f)
 
     train_filelist, val_filelist = dataset.train_val_split(
-        mix_dir=args.mixtures,
-        inst_dir=args.instruments,
+        split_mode=args.split_mode,
+        dataset_dir=args.dataset,
         val_rate=args.val_rate,
         val_filelist=val_filelist)
 
