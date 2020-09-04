@@ -123,7 +123,7 @@ def main():
         X = np.asarray([X, X])
 
     print('stft of wave source...', end=' ')
-    X = spec_utils.get_spectrogram(X, args.hop_length, args.n_fft)
+    X = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
 
     vr = VocalRemover(model, device, args.window_size)

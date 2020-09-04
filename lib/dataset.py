@@ -11,20 +11,22 @@ from lib import spec_utils
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
-    def __init__(self, filelist):
-        self.filelist = filelist
+    def __init__(self, patch_list):
+        self.patch_list = patch_list
 
     def __len__(self):
-        return len(self.filelist)
+        return len(self.patch_list)
 
     def __getitem__(self, idx):
-        path = self.filelist[idx]
+        path = self.patch_list[idx]
         data = np.load(path)
 
-        X = np.abs(data['X'])
-        y = np.abs(data['y'])
+        X, y = data['X'], data['y']
 
-        return X, y
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag
 
 
 def make_pair(mix_dir, inst_dir):
@@ -60,25 +62,56 @@ def train_val_split(mix_dir, inst_dir, val_rate, val_filelist):
     return train_filelist, val_filelist
 
 
-def mixup_generator(X, y, rate, alpha):
-    perm = np.random.permutation(len(X))[:int(len(X) * rate)]
-    for i in range(len(perm) - 1):
-        lam = np.random.beta(alpha, alpha)
-        X[perm[i]] = lam * X[perm[i]] + (1 - lam) * X[perm[i + 1]]
-        y[perm[i]] = lam * y[perm[i]] + (1 - lam) * y[perm[i + 1]]
+def augment(X, y, max_reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
+    if max_reduction_rate > 0:
+        reduction_rate = np.random.uniform(0, max_reduction_rate, len(X))
+        reduction_mask = reduction_rate[:, None, None, None] * reduction_mask
+
+        for X_i, y_i, rmask_i in zip(tqdm(X), y, reduction_mask):
+            v_i = X_i - y_i
+            y_mag_tmp = np.abs(y_i)
+            v_mag_tmp = np.abs(v_i)
+
+            v_mask = v_mag_tmp > y_mag_tmp
+            y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * rmask_i, 0.01 * y_mag_tmp, np.inf)
+            y_i[:] = y_mag * np.exp(1.j * np.angle(y_i))
+
+            p = np.random.uniform()
+            if p < 0.5:
+                # swap channel
+                X_i[:] = X_i[::-1]
+                y_i[:] = y_i[::-1]
+            elif p < 0.52:
+                # mono
+                X_i[:] = X_i.mean(axis=0, keepdims=True)
+                y_i[:] = y_i.mean(axis=0, keepdims=True)
+            elif p < 0.54:
+                # inst
+                X_i[:] = y_i
+    else:
+        for X_i, y_i, rmask_i in zip(tqdm(X), y):
+            p = np.random.uniform()
+            if p < 0.5:
+                # swap channel
+                X_i[:] = X_i[::-1]
+                y_i[:] = y_i[::-1]
+            elif p < 0.52:
+                # mono
+                X_i[:] = X_i.mean(axis=0, keepdims=True)
+                y_i[:] = y_i.mean(axis=0, keepdims=True)
+            elif p < 0.54:
+                # inst
+                X_i[:] = y_i
+
+    if mixup_rate > 0:
+        # mixup
+        perm = np.random.permutation(len(X))[:int(len(X) * mixup_rate)]
+        for i in range(len(perm) - 1):
+            lam = np.random.beta(mixup_alpha, mixup_alpha)
+            X[perm[i]] = lam * X[perm[i]] + (1 - lam) * X[perm[i + 1]]
+            y[perm[i]] = lam * y[perm[i]] + (1 - lam) * y[perm[i + 1]]
 
     return X, y
-
-
-def get_oracle_data(X, y, instance_loss, oracle_rate, oracle_drop_rate):
-    k = int(len(X) * oracle_rate * (1 / (1 - oracle_drop_rate)))
-    n = int(len(X) * oracle_rate)
-    idx = np.argsort(instance_loss)[::-1][:k]
-    idx = np.random.choice(idx, n, replace=False)
-    oracle_X = X[idx].copy()
-    oracle_y = y[idx].copy()
-
-    return oracle_X, oracle_y, idx
 
 
 def make_padding(width, cropsize, offset):
@@ -114,18 +147,6 @@ def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset
             idx = i * patches + j
             X_dataset[idx] = X_pad[:, :, starts[j]:ends[j]]
             y_dataset[idx] = y_pad[:, :, starts[j]:ends[j]]
-            p = np.random.uniform()
-            if p < 0.5:
-                # swap channel
-                X_dataset[idx] = X_dataset[idx, ::-1]
-                y_dataset[idx] = y_dataset[idx, ::-1]
-            elif p < 0.52:
-                # mono
-                X_dataset[idx] = X_dataset[idx].mean(axis=0, keepdims=True)
-                y_dataset[idx] = y_dataset[idx].mean(axis=0, keepdims=True)
-            elif p < 0.54:
-                # inst
-                X_dataset[idx] = y_dataset[idx]
 
     return X_dataset, y_dataset
 

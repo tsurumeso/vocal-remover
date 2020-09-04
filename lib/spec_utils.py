@@ -23,11 +23,12 @@ def crop_center(h1, h2):
     return h1
 
 
-def get_spectrogram(X, hop_length, n_fft):
-    audio_left = np.asfortranarray(X[0])
-    audio_right = np.asfortranarray(X[1])
-    spec_left = librosa.stft(audio_left, n_fft, hop_length=hop_length)
-    spec_right = librosa.stft(audio_right, n_fft, hop_length=hop_length)
+def wave_to_spectrogram(wave, hop_length, n_fft):
+    wave_left = np.asfortranarray(wave[0])
+    wave_right = np.asfortranarray(wave[1])
+
+    spec_left = librosa.stft(wave_left, n_fft, hop_length=hop_length)
+    spec_right = librosa.stft(wave_right, n_fft, hop_length=hop_length)
     spec = np.asfortranarray([spec_left, spec_right])
 
     return spec
@@ -39,7 +40,7 @@ def spectrogram_to_image(spec, mode='magnitude'):
             y = np.abs(spec)
         else:
             y = spec
-        y = np.log10((y) ** 2 + 1e-8)
+        y = np.log(y ** 2 + 1e-8)
     elif mode == 'phase':
         if np.iscomplexobj(spec):
             y = np.angle(spec)
@@ -145,8 +146,8 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
 
         X, y = align_wave_head_and_tail(X, y, sr)
 
-        X = get_spectrogram(X, hop_length, n_fft)
-        y = get_spectrogram(y, hop_length, n_fft)
+        X = wave_to_spectrogram(X, hop_length, n_fft)
+        y = wave_to_spectrogram(y, hop_length, n_fft)
 
         _, ext = os.path.splitext(mix_path)
         np.save(mix_cache_path, X)
@@ -177,24 +178,26 @@ if __name__ == "__main__":
 
     X, y = align_wave_head_and_tail(X, y, 44100)
 
-    X_spec = get_spectrogram(X, 1024, 2048)
-    y_spec = get_spectrogram(y, 1024, 2048)
+    X_spec = wave_to_spectrogram(X, 1024, 2048)
+    y_spec = wave_to_spectrogram(y, 1024, 2048)
     v_spec = X_spec - y_spec
+
+    # v_mask = np.abs(v_spec) > np.abs(y_spec)
+    # y_spec = X_spec - v_spec * v_mask
+    # v_spec = X_spec - y_spec
 
     X_mag = np.abs(X_spec)
     y_mag = np.abs(y_spec)
     v_mag = np.abs(v_spec)
 
-    # v_mag = v_mag * (v_mag > y_mag)
-
     X_image = spectrogram_to_image(X_mag)
     y_image = spectrogram_to_image(y_mag)
     v_image = spectrogram_to_image(v_mag)
 
-    cv2.imwrite('test_y.jpg', y_image)
     cv2.imwrite('test_X.jpg', X_image)
+    cv2.imwrite('test_y.jpg', y_image)
     cv2.imwrite('test_v.jpg', v_image)
 
-    sf.write('test_y.wav', y.T, 44100)
-    sf.write('test_X.wav', X.T, 44100)
-    sf.write('test_v.wav', (X - y).T, 44100)
+    sf.write('test_X.wav', spectrogram_to_wave(X_spec).T, 44100)
+    sf.write('test_y.wav', spectrogram_to_wave(y_spec).T, 44100)
+    sf.write('test_v.wav', spectrogram_to_wave(v_spec).T, 44100)
