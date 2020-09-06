@@ -107,8 +107,8 @@ def main():
             val_filelist = json.load(f)
 
     train_filelist, val_filelist = dataset.train_val_split(
-        split_mode=args.split_mode,
         dataset_dir=args.dataset,
+        split_mode=args.split_mode,
         val_rate=args.val_rate,
         val_filelist=val_filelist)
 
@@ -159,8 +159,8 @@ def main():
 
     bins = args.n_fft // 2 + 1
     freq_to_bin = 2 * bins / args.sr
-    unstable_bins = int(110 * freq_to_bin)
-    reduction_bins = int(11025 * freq_to_bin)
+    unstable_bins = int(160 * freq_to_bin)
+    reduction_bins = int(16000 * freq_to_bin)
     reduction_mask = np.concatenate([
         np.linspace(0, 1, unstable_bins)[:, None],
         np.linspace(1, 0, reduction_bins - unstable_bins)[:, None],
