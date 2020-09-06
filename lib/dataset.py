@@ -46,7 +46,7 @@ def make_pair(mix_dir, inst_dir):
     return filelist
 
 
-def train_val_split(split_mode, dataset_dir, val_rate, val_filelist):
+def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
     if split_mode == 'random':
         filelist = make_pair(
             os.path.join(dataset_dir, 'mixtures'),
