@@ -83,23 +83,17 @@ def augment(X, y, max_reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
         reduction_mask = reduction_rate[:, None, None, None] * reduction_mask
 
         for X_i, y_i, rmask_i in zip(tqdm(X), y, reduction_mask):
-            v_i = X_i - y_i
-            y_mag_tmp = np.abs(y_i)
-            v_mag_tmp = np.abs(v_i)
-
-            v_mask = v_mag_tmp > y_mag_tmp
-            y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * rmask_i, 0.01 * y_mag_tmp, np.inf)
-            y_i[:] = y_mag * np.exp(1.j * np.angle(y_i))
-
             p = np.random.uniform()
             if p < 0.5:
                 # swap channel
                 X_i[:] = X_i[::-1]
                 y_i[:] = y_i[::-1]
+                y_i[:] = spec_utils.reduce_vocal_aggressively(X_i, y_i, rmask_i)
             elif p < 0.52:
                 # mono
                 X_i[:] = X_i.mean(axis=0, keepdims=True)
                 y_i[:] = y_i.mean(axis=0, keepdims=True)
+                y_i[:] = spec_utils.reduce_vocal_aggressively(X_i, y_i, rmask_i)
             elif p < 0.54:
                 # inst
                 X_i[:] = y_i

@@ -60,6 +60,17 @@ def spectrogram_to_image(spec, mode='magnitude'):
     return img
 
 
+def reduce_vocal_aggressively(X, y, softmask):
+    v = X - y
+    y_mag_tmp = np.abs(y)
+    v_mag_tmp = np.abs(v)
+
+    v_mask = v_mag_tmp > y_mag_tmp
+    y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * softmask, 0.01 * y_mag_tmp, np.inf)
+
+    return y_mag * np.exp(1.j * np.angle(y))
+
+
 def mask_uninformative(mask, ref, thres=0.1, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
         raise ValueError('min_range must be >= fade_area * 2')
