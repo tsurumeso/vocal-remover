@@ -72,11 +72,11 @@ def main():
     p.add_argument('--gpu', '-g', type=int, default=-1)
     p.add_argument('--seed', '-s', type=int, default=2019)
     p.add_argument('--sr', '-r', type=int, default=44100)
-    p.add_argument('--hop_length', '-l', type=int, default=1024)
+    p.add_argument('--hop_length', '-H', type=int, default=1024)
     p.add_argument('--n_fft', '-f', type=int, default=2048)
     p.add_argument('--dataset', '-d', required=True)
     p.add_argument('--split_mode', '-S', type=str, choices=['random', 'subdirs'], default='random')
-    p.add_argument('--learning_rate', '-L', type=float, default=0.001)
+    p.add_argument('--learning_rate', '-l', type=float, default=0.001)
     p.add_argument('--lr_min', type=float, default=0.0001)
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
     p.add_argument('--lr_decay_patience', type=int, default=6)
@@ -89,7 +89,8 @@ def main():
     p.add_argument('--val_cropsize', '-C', type=int, default=512)
     p.add_argument('--epoch', '-E', type=int, default=60)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
-    p.add_argument('--max_reduction_rate', '-R', type=float, default=0.0)
+    p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
+    p.add_argument('--reduction_level', '-L', type=float, default=0.1)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
@@ -165,7 +166,7 @@ def main():
         np.linspace(0, 1, unstable_bins)[:, None],
         np.linspace(1, 0, reduction_bins - unstable_bins)[:, None],
         np.zeros((bins - reduction_bins, 1))
-    ], axis=0)
+    ], axis=0) * args.reduction_level
 
     log = []
     best_loss = np.inf
@@ -181,7 +182,7 @@ def main():
 
         X_train, y_train = dataset.augment(
             X_train, y_train,
-            max_reduction_rate=args.max_reduction_rate,
+            reduction_rate=args.reduction_rate,
             reduction_mask=reduction_mask,
             mixup_rate=args.mixup_rate,
             mixup_alpha=args.mixup_alpha)

@@ -77,41 +77,23 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
     return train_filelist, val_filelist
 
 
-def augment(X, y, max_reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
-    if max_reduction_rate > 0:
-        reduction_rate = np.random.uniform(0, max_reduction_rate, len(X))
-        reduction_mask = reduction_rate[:, None, None, None] * reduction_mask
+def augment(X, y, reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
+    for X_i, y_i in zip(tqdm(X), y):
+        if np.random.uniform() < reduction_rate:
+            y_i[:] = spec_utils.reduce_vocal_aggressively(X_i, y_i, reduction_mask)
 
-        for X_i, y_i, rmask_i in zip(tqdm(X), y, reduction_mask):
-            p = np.random.uniform()
-            if p < 0.5:
-                # swap channel
-                X_i[:] = X_i[::-1]
-                y_i[:] = spec_utils.reduce_vocal_aggressively(X_i, y_i[::-1], rmask_i)
-            elif p < 0.52:
-                # mono
-                X_i[:] = X_i.mean(axis=0, keepdims=True)
-                y_i[:] = y_i.mean(axis=0, keepdims=True)
-            elif p < 0.54:
-                # inst
-                X_i[:] = y_i
-            else:
-                # no augmentation
-                y_i[:] = spec_utils.reduce_vocal_aggressively(X_i, y_i, rmask_i)
-    else:
-        for X_i, y_i, rmask_i in zip(tqdm(X), y):
-            p = np.random.uniform()
-            if p < 0.5:
-                # swap channel
-                X_i[:] = X_i[::-1]
-                y_i[:] = y_i[::-1]
-            elif p < 0.52:
-                # mono
-                X_i[:] = X_i.mean(axis=0, keepdims=True)
-                y_i[:] = y_i.mean(axis=0, keepdims=True)
-            elif p < 0.54:
-                # inst
-                X_i[:] = y_i
+        p = np.random.uniform()
+        if p < 0.5:
+            # swap channel
+            X_i[:] = X_i[::-1]
+            y_i[:] = y_i[::-1]
+        elif p < 0.52:
+            # mono
+            X_i[:] = X_i.mean(axis=0, keepdims=True)
+            y_i[:] = y_i.mean(axis=0, keepdims=True)
+        elif p < 0.54:
+            # inst
+            X_i[:] = y_i
 
     if mixup_rate > 0:
         # mixup
