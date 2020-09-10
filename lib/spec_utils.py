@@ -66,7 +66,7 @@ def reduce_vocal_aggressively(X, y, softmask):
     v_mag_tmp = np.abs(v)
 
     v_mask = v_mag_tmp > y_mag_tmp
-    y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * softmask, 0.01 * y_mag_tmp, np.inf)
+    y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * softmask, 0, np.inf)
 
     return y_mag * np.exp(1.j * np.angle(y))
 
