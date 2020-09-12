@@ -90,7 +90,7 @@ def main():
     p.add_argument('--epoch', '-E', type=int, default=60)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
-    p.add_argument('--reduction_level', '-L', type=float, default=0.1)
+    p.add_argument('--reduction_level', '-L', type=float, default=0.2)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
