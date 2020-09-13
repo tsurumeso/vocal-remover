@@ -191,8 +191,6 @@ if __name__ == "__main__":
 
     X_spec = wave_to_spectrogram(X, 1024, 2048)
     y_spec = wave_to_spectrogram(y, 1024, 2048)
-
-    y_spec = reduce_vocal_aggressively(X_spec, y_spec, 0.2)
     v_spec = X_spec - y_spec
 
     # v_mask = np.abs(v_spec) > np.abs(y_spec)
