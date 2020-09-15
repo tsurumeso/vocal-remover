@@ -34,10 +34,11 @@ def train_inner_epoch(X, y, model, device, optimizer, batchsize):
         y_mag = torch.from_numpy(y_mag).to(device)
 
         model.zero_grad()
-        pred, aux = model(X_mag)
+        pred, aux1, aux2 = model(X_mag)
 
-        loss = crit(pred, y_mag) * 0.9
-        loss += crit(aux, y_mag) * 0.1
+        loss = crit(pred, y_mag) * 0.8
+        loss += crit(aux1, y_mag) * 0.1
+        loss += crit(aux2, y_mag) * 0.1
 
         loss.backward()
         optimizer.step()

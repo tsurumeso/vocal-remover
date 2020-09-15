@@ -43,13 +43,16 @@ class CascadedASPPNet(nn.Module):
         super(CascadedASPPNet, self).__init__()
         self.stg1_low_band_net = BaseASPPNet(2, 16)
         self.stg1_high_band_net = BaseASPPNet(2, 16)
-        self.stg1_full_band_net = BaseASPPNet(2, 16)
 
-        self.bridge = layers.Conv2DBNActiv(34, 16, 1, 1, 0)
-        self.stg2_full_band_net = BaseASPPNet(16, 32)
+        self.stg2_bridge = layers.Conv2DBNActiv(18, 8, 1, 1, 0)
+        self.stg2_full_band_net = BaseASPPNet(8, 16)
+
+        self.stg3_bridge = layers.Conv2DBNActiv(34, 16, 1, 1, 0)
+        self.stg3_full_band_net = BaseASPPNet(16, 32)
 
         self.out = nn.Conv2d(32, 2, 1, bias=False)
-        self.aux_out = nn.Conv2d(32, 2, 1, bias=False)
+        self.aux1_out = nn.Conv2d(16, 2, 1, bias=False)
+        self.aux2_out = nn.Conv2d(16, 2, 1, bias=False)
 
         self.max_bin = n_fft // 2
         self.output_bin = n_fft // 2 + 1
@@ -63,31 +66,37 @@ class CascadedASPPNet(nn.Module):
         x = x[:, :, :self.max_bin]
 
         bandw = x.size()[2] // 2
-        aux = torch.cat([
-            torch.cat([
-                self.stg1_low_band_net(x[:, :, :bandw]),
-                self.stg1_high_band_net(x[:, :, bandw:])
-            ], dim=2),
-            self.stg1_full_band_net(x)
-        ], dim=1)
+        aux1 = torch.cat([
+            self.stg1_low_band_net(x[:, :, :bandw]),
+            self.stg1_high_band_net(x[:, :, bandw:])
+        ], dim=2)
 
-        h = torch.cat([x, aux], dim=1)
-        h = self.stg2_full_band_net(self.bridge(h))
-        h = torch.sigmoid(self.out(h))
-        h = F.pad(
-            input=h,
-            pad=(0, 0, 0, self.output_bin - h.size()[2]),
+        h = torch.cat([x, aux1], dim=1)
+        aux2 = self.stg2_full_band_net(self.stg2_bridge(h))
+
+        h = torch.cat([x, aux1, aux2], dim=1)
+        h = self.stg3_full_band_net(self.stg3_bridge(h))
+
+        mask = torch.sigmoid(self.out(h))
+        mask = F.pad(
+            input=mask,
+            pad=(0, 0, 0, self.output_bin - mask.size()[2]),
             mode='replicate')
 
         if self.training:
-            aux = torch.sigmoid(self.aux_out(aux))
-            aux = F.pad(
-                input=aux,
-                pad=(0, 0, 0, self.output_bin - aux.size()[2]),
+            aux1 = torch.sigmoid(self.aux1_out(aux1))
+            aux1 = F.pad(
+                input=aux1,
+                pad=(0, 0, 0, self.output_bin - aux1.size()[2]),
                 mode='replicate')
-            return h * mix, aux * mix
+            aux2 = torch.sigmoid(self.aux2_out(aux2))
+            aux2 = F.pad(
+                input=aux2,
+                pad=(0, 0, 0, self.output_bin - aux2.size()[2]),
+                mode='replicate')
+            return mask * mix, aux1 * mix, aux2 * mix
         else:
-            return h * mix
+            return mask * mix
 
     def predict(self, x_mag):
         h = self.forward(x_mag)
