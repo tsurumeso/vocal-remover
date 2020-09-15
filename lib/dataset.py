@@ -78,30 +78,27 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
 
 
 def augment(X, y, reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
-    for X_i, y_i in zip(tqdm(X), y):
+    perm = np.random.permutation(len(X))
+    for i, idx in enumerate(tqdm(perm)):
         if np.random.uniform() < reduction_rate:
-            y_i[:] = spec_utils.reduce_vocal_aggressively(X_i, y_i, reduction_mask)
+            y[idx] = spec_utils.reduce_vocal_aggressively(X[idx], y[idx], reduction_mask)
 
-        p = np.random.uniform()
-        if p < 0.5:
+        if np.random.uniform() < 0.5:
             # swap channel
-            X_i[:] = X_i[::-1]
-            y_i[:] = y_i[::-1]
-        elif p < 0.52:
+            X[idx] = X[idx, ::-1]
+            y[idx] = y[idx, ::-1]
+        if np.random.uniform() < 0.02:
             # mono
-            X_i[:] = X_i.mean(axis=0, keepdims=True)
-            y_i[:] = y_i.mean(axis=0, keepdims=True)
-        elif p < 0.54:
+            X[idx] = X[idx].mean(axis=0, keepdims=True)
+            y[idx] = y[idx].mean(axis=0, keepdims=True)
+        if np.random.uniform() < 0.02:
             # inst
-            X_i[:] = y_i
+            X[idx] = y[idx]
 
-    if mixup_rate > 0:
-        # mixup
-        perm = np.random.permutation(len(X))[:int(len(X) * mixup_rate)]
-        for i in range(len(perm) - 1):
+        if np.random.uniform() < mixup_rate and i < len(perm) - 1:
             lam = np.random.beta(mixup_alpha, mixup_alpha)
-            X[perm[i]] = lam * X[perm[i]] + (1 - lam) * X[perm[i + 1]]
-            y[perm[i]] = lam * y[perm[i]] + (1 - lam) * y[perm[i + 1]]
+            X[idx] = lam * X[idx] + (1 - lam) * X[perm[i + 1]]
+            y[idx] = lam * y[idx] + (1 - lam) * y[perm[i + 1]]
 
     return X, y
 
