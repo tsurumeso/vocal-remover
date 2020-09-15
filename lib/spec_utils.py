@@ -71,11 +71,11 @@ def reduce_vocal_aggressively(X, y, softmask):
     return y_mag * np.exp(1.j * np.angle(y))
 
 
-def mask_uninformative(mask, ref, thres=0.1, min_range=64, fade_size=32):
+def mask_silence(mag, ref, thres=0.2, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
         raise ValueError('min_range must be >= fade_area * 2')
 
-    mask = mask.copy()
+    mag = mag.copy()
 
     idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
     starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
@@ -91,20 +91,20 @@ def mask_uninformative(mask, ref, thres=0.1, min_range=64, fade_size=32):
 
             if s != 0:
                 weight = np.linspace(0, 1, fade_size)
-                mask[:, :, s:s + fade_size] += weight * ref[:, :, s:s + fade_size]
+                mag[:, :, s:s + fade_size] += weight * ref[:, :, s:s + fade_size]
             else:
                 s -= fade_size
 
-            if e != mask.shape[2]:
+            if e != mag.shape[2]:
                 weight = np.linspace(1, 0, fade_size)
-                mask[:, :, e - fade_size:e] += weight * ref[:, :, e - fade_size:e]
+                mag[:, :, e - fade_size:e] += weight * ref[:, :, e - fade_size:e]
             else:
                 e += fade_size
 
-            mask[:, :, s + fade_size:e - fade_size] += ref[:, :, s + fade_size:e - fade_size]
+            mag[:, :, s + fade_size:e - fade_size] += ref[:, :, s + fade_size:e - fade_size]
             old_e = e
 
-    return mask
+    return mag
 
 
 def align_wave_head_and_tail(a, b, sr):

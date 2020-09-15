@@ -136,7 +136,7 @@ def main():
     if args.postprocess:
         print('post processing...', end=' ')
         pred_inv = np.clip(X_mag - pred, 0, np.inf)
-        pred = spec_utils.mask_uninformative(pred, pred_inv)
+        pred = spec_utils.mask_silence(pred, pred_inv)
         print('done')
 
     print('inverse stft of instruments...', end=' ')
