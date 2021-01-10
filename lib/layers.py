@@ -7,8 +7,14 @@ from lib import spec_utils
 
 class Conv2DBNActiv(nn.Module):
 
-    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ=nn.ReLU):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ='relu'):
         super(Conv2DBNActiv, self).__init__()
+        self.activ = nn.ReLU()
+        if activ == 'leaky_relu':
+            self.activ = nn.LeakyReLU(0.1)
+        else:
+            self.activ = nn.ReLU()
+
         self.conv = nn.Sequential(
             nn.Conv2d(
                 nin, nout,
@@ -18,7 +24,7 @@ class Conv2DBNActiv(nn.Module):
                 dilation=dilation,
                 bias=False),
             nn.BatchNorm2d(nout),
-            activ()
+            self.activ
         )
 
     def __call__(self, x):
@@ -27,8 +33,14 @@ class Conv2DBNActiv(nn.Module):
 
 class SeperableConv2DBNActiv(nn.Module):
 
-    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ=nn.ReLU):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ='relu'):
         super(SeperableConv2DBNActiv, self).__init__()
+        self.activ = nn.ReLU()
+        if activ == 'leaky_relu':
+            self.activ = nn.LeakyReLU(0.1)
+        else:
+            self.activ = nn.ReLU()
+
         self.conv = nn.Sequential(
             nn.Conv2d(
                 nin, nin,
@@ -43,7 +55,7 @@ class SeperableConv2DBNActiv(nn.Module):
                 kernel_size=1,
                 bias=False),
             nn.BatchNorm2d(nout),
-            activ()
+            self.activ
         )
 
     def __call__(self, x):
@@ -52,10 +64,10 @@ class SeperableConv2DBNActiv(nn.Module):
 
 class Encoder(nn.Module):
 
-    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, activ=nn.LeakyReLU):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1):
         super(Encoder, self).__init__()
-        self.conv1 = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ=activ)
-        self.conv2 = Conv2DBNActiv(nout, nout, ksize, stride, pad, activ=activ)
+        self.conv1 = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ='leaky_relu')
+        self.conv2 = Conv2DBNActiv(nout, nout, ksize, stride, pad, activ='leaky_relu')
 
     def __call__(self, x):
         skip = self.conv1(x)
@@ -66,9 +78,9 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
 
-    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, activ=nn.ReLU, dropout=False):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dropout=False):
         super(Decoder, self).__init__()
-        self.conv = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ=activ)
+        self.conv = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ='relu')
         self.dropout = nn.Dropout2d(0.1) if dropout else None
 
     def __call__(self, x, skip=None):
@@ -86,21 +98,21 @@ class Decoder(nn.Module):
 
 class ASPPModule(nn.Module):
 
-    def __init__(self, nin, nout, dilations=(4, 8, 16), activ=nn.ReLU):
+    def __init__(self, nin, nout, dilations=(4, 8, 16)):
         super(ASPPModule, self).__init__()
         self.conv1 = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, None)),
-            Conv2DBNActiv(nin, nin, 1, 1, 0, activ=activ)
+            Conv2DBNActiv(nin, nin, 1, 1, 0, activ='relu')
         )
-        self.conv2 = Conv2DBNActiv(nin, nin, 1, 1, 0, activ=activ)
+        self.conv2 = Conv2DBNActiv(nin, nin, 1, 1, 0, activ='relu')
         self.conv3 = SeperableConv2DBNActiv(
-            nin, nin, 3, 1, dilations[0], dilations[0], activ=activ)
+            nin, nin, 3, 1, dilations[0], dilations[0], activ='relu')
         self.conv4 = SeperableConv2DBNActiv(
-            nin, nin, 3, 1, dilations[1], dilations[1], activ=activ)
+            nin, nin, 3, 1, dilations[1], dilations[1], activ='relu')
         self.conv5 = SeperableConv2DBNActiv(
-            nin, nin, 3, 1, dilations[2], dilations[2], activ=activ)
+            nin, nin, 3, 1, dilations[2], dilations[2], activ='relu')
         self.bottleneck = nn.Sequential(
-            Conv2DBNActiv(nin * 5, nout, 1, 1, 0, activ=activ),
+            Conv2DBNActiv(nin * 5, nout, 1, 1, 0, activ='relu'),
             nn.Dropout2d(0.1)
         )
 
