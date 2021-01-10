@@ -61,12 +61,14 @@ def spectrogram_to_image(spec, mode='magnitude'):
 
 
 def reduce_vocal_aggressively(X, y, softmask):
-    v = X - y
-    y_mag_tmp = np.abs(y)
-    v_mag_tmp = np.abs(v)
+    X_mag = np.abs(X)
+    y_mag = np.abs(y)
 
+    y_mag_tmp = np.clip(y_mag, 0, X_mag)
+    v_mag_tmp = X_mag - y_mag_tmp
     v_mask = v_mag_tmp > y_mag_tmp
-    y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * softmask, 0, np.inf)
+
+    y_mag = np.clip(y_mag - v_mag_tmp * v_mask * softmask, 0, np.inf)
 
     return y_mag * np.exp(1.j * np.angle(y))
 
@@ -188,24 +190,23 @@ if __name__ == "__main__":
         sys.argv[2], 44100, False, dtype=np.float32, res_type='kaiser_fast')
 
     X, y = align_wave_head_and_tail(X, y, 44100)
-
     X_spec = wave_to_spectrogram(X, 1024, 2048)
     y_spec = wave_to_spectrogram(y, 1024, 2048)
 
-    y_spec = reduce_vocal_aggressively(X_spec, y_spec, 0.2)
-    v_spec = X_spec - y_spec
-
-    # v_mask = np.abs(v_spec) > np.abs(y_spec)
-    # y_spec = X_spec - v_spec * v_mask
-    # v_spec = X_spec - y_spec
-
     X_mag = np.abs(X_spec)
     y_mag = np.abs(y_spec)
-    v_mag = np.abs(v_spec)
 
-    X_image = spectrogram_to_image(X_mag)
-    y_image = spectrogram_to_image(y_mag)
-    v_image = spectrogram_to_image(v_mag)
+    y_mag = np.clip(y_mag, 0, X_mag)
+    v_mag = X_mag - y_mag
+
+    y_spec = y_mag * np.exp(1j * np.angle(y_spec))
+    v_spec = v_mag * np.exp(1j * np.angle(X_spec))
+
+    # v_spec *= v_mag > y_mag
+
+    X_image = spectrogram_to_image(X_spec)
+    y_image = spectrogram_to_image(y_spec)
+    v_image = spectrogram_to_image(v_spec)
 
     cv2.imwrite('test_X.jpg', X_image)
     cv2.imwrite('test_y.jpg', y_image)
