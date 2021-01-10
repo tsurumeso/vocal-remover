@@ -1,7 +1,6 @@
 import argparse
 import os
 
-import cv2
 import librosa
 import numpy as np
 import soundfile as sf
@@ -11,6 +10,7 @@ from tqdm import tqdm
 from lib import dataset
 from lib import nets
 from lib import spec_utils
+from lib import utils
 
 
 class VocalRemover(object):
@@ -58,9 +58,9 @@ class VocalRemover(object):
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
         pred = self._execute(X_mag_pad, roi_size, n_window)
-        pred = pred[:, :, :n_frame]
+        pred = pred[:, :, :n_frame] * coef
 
-        return pred * coef, X_mag, np.exp(1.j * X_phase)
+        return pred, X_mag, np.exp(1.j * X_phase)
 
     def inference_tta(self, X_spec):
         X_mag, X_phase = self.preprocess(X_spec)
@@ -75,7 +75,6 @@ class VocalRemover(object):
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
         pred = self._execute(X_mag_pad, roi_size, n_window)
-        pred = pred[:, :, :n_frame]
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
@@ -85,9 +84,10 @@ class VocalRemover(object):
 
         pred_tta = self._execute(X_mag_pad, roi_size, n_window)
         pred_tta = pred_tta[:, :, roi_size // 2:]
-        pred_tta = pred_tta[:, :, :n_frame]
 
-        return (pred + pred_tta) * 0.5 * coef, X_mag, np.exp(1.j * X_phase)
+        pred = (pred[:, :, :n_frame] + pred_tta[:, :, :n_frame]) * 0.5 * coef
+
+        return pred, X_mag, np.exp(1.j * X_phase)
 
 
 def main():
@@ -146,20 +146,17 @@ def main():
     sf.write('{}_Instruments.wav'.format(basename), wave.T, sr)
 
     print('inverse stft of vocals...', end=' ')
-    v_spec = np.clip(X_mag - pred, 0, np.inf) * X_phase
+    v_spec = X - y_spec
     wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
     print('done')
     sf.write('{}_Vocals.wav'.format(basename), wave.T, sr)
 
     if args.output_image:
-        with open('{}_Instruments.jpg'.format(basename), mode='wb') as f:
-            image = spec_utils.spectrogram_to_image(y_spec)
-            _, bin_image = cv2.imencode('.jpg', image)
-            bin_image.tofile(f)
-        with open('{}_Vocals.jpg'.format(basename), mode='wb') as f:
-            image = spec_utils.spectrogram_to_image(v_spec)
-            _, bin_image = cv2.imencode('.jpg', image)
-            bin_image.tofile(f)
+        image = spec_utils.spectrogram_to_image(y_spec)
+        utils.imwrite('{}_Instruments.jpg'.format(basename), image)
+
+        image = spec_utils.spectrogram_to_image(v_spec)
+        utils.imwrite('{}_Vocals.jpg'.format(basename), image)
 
 
 if __name__ == '__main__':
