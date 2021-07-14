@@ -15,13 +15,14 @@ from lib import utils
 
 class VocalRemover(object):
 
-    def __init__(self, model, device, window_size):
+    def __init__(self, model, device, window_size, postprocess=False):
         self.model = model
         self.offset = model.offset
         self.device = device
         self.window_size = window_size
+        self.postprocess = postprocess
 
-    def _execute(self, X_mag_pad, roi_size, n_window):
+    def _inference(self, X_mag_pad, roi_size, n_window):
         self.model.eval()
         with torch.no_grad():
             preds = []
@@ -39,14 +40,23 @@ class VocalRemover(object):
 
         return pred
 
-    def preprocess(self, X_spec):
+    def _preprocess(self, X_spec):
         X_mag = np.abs(X_spec)
         X_phase = np.angle(X_spec)
 
         return X_mag, X_phase
 
+    def _postprocess(self, pred, X_mag, X_phase):
+        if self.postprocess:
+            print('post processing...', end=' ')
+            pred_vocal = np.clip(X_mag - pred, 0, np.inf)
+            pred = spec_utils.mask_silence(pred, pred_vocal)
+            print('done')
+
+        return pred * np.exp(1.j * X_phase)
+
     def inference(self, X_spec):
-        X_mag, X_phase = self.preprocess(X_spec)
+        X_mag, X_phase = self._preprocess(X_spec)
 
         coef = X_mag.max()
         X_mag_pre = X_mag / coef
@@ -57,13 +67,15 @@ class VocalRemover(object):
 
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred = self._execute(X_mag_pad, roi_size, n_window)
+        pred = self._inference(X_mag_pad, roi_size, n_window)
         pred = pred[:, :, :n_frame] * coef
 
-        return pred, X_mag, np.exp(1.j * X_phase)
+        y_spec = self._postprocess(pred, X_mag, X_phase)
+
+        return y_spec
 
     def inference_tta(self, X_spec):
-        X_mag, X_phase = self.preprocess(X_spec)
+        X_mag, X_phase = self._preprocess(X_spec)
 
         coef = X_mag.max()
         X_mag_pre = X_mag / coef
@@ -74,7 +86,7 @@ class VocalRemover(object):
 
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred = self._execute(X_mag_pad, roi_size, n_window)
+        pred = self._inference(X_mag_pad, roi_size, n_window)
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
@@ -82,12 +94,13 @@ class VocalRemover(object):
 
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred_tta = self._execute(X_mag_pad, roi_size, n_window)
+        pred_tta = self._inference(X_mag_pad, roi_size, n_window)
         pred_tta = pred_tta[:, :, roi_size // 2:]
-
         pred = (pred[:, :, :n_frame] + pred_tta[:, :, :n_frame]) * 0.5 * coef
 
-        return pred, X_mag, np.exp(1.j * X_phase)
+        y_spec = self._postprocess(pred, X_mag, X_phase)
+
+        return y_spec
 
 
 def main():
@@ -97,8 +110,8 @@ def main():
     p.add_argument('--input', '-i', required=True)
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--n_fft', '-f', type=int, default=2048)
-    p.add_argument('--hop_length', '-l', type=int, default=1024)
-    p.add_argument('--window_size', '-w', type=int, default=512)
+    p.add_argument('--hop_length', '-H', type=int, default=1024)
+    p.add_argument('--window_size', '-w', type=int, default=256)
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
@@ -106,7 +119,7 @@ def main():
 
     print('loading model...', end=' ')
     device = torch.device('cpu')
-    model = nets.CascadedASPPNet(args.n_fft)
+    model = nets.CascadedNet(args.n_fft)
     model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
         device = torch.device('cuda:{}'.format(args.gpu))
@@ -120,27 +133,21 @@ def main():
     print('done')
 
     if X.ndim == 1:
+        # mono to stereo
         X = np.asarray([X, X])
 
     print('stft of wave source...', end=' ')
     X = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
 
-    vr = VocalRemover(model, device, args.window_size)
+    vr = VocalRemover(model, device, args.window_size, args.postprocess)
 
     if args.tta:
-        pred, X_mag, X_phase = vr.inference_tta(X)
+        y_spec = vr.inference_tta(X)
     else:
-        pred, X_mag, X_phase = vr.inference(X)
-
-    if args.postprocess:
-        print('post processing...', end=' ')
-        pred_inv = np.clip(X_mag - pred, 0, np.inf)
-        pred = spec_utils.mask_silence(pred, pred_inv)
-        print('done')
+        y_spec = vr.inference(X)
 
     print('inverse stft of instruments...', end=' ')
-    y_spec = pred * X_phase
     wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
     print('done')
     sf.write('{}_Instruments.wav'.format(basename), wave.T, sr)

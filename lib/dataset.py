@@ -9,6 +9,59 @@ from tqdm import tqdm
 from lib import spec_utils
 
 
+class VocalRemoverTrainingSet(torch.utils.data.Dataset):
+
+    def __init__(self, X, y, oracle_indices, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
+        self.X = X
+        self.y = y
+        self.oracle_indices = oracle_indices
+        self.reduction_rate = reduction_rate
+        self.reduction_weight = reduction_weight
+        self.mixup_rate = mixup_rate
+        self.mixup_alpha = mixup_alpha
+
+    def __len__(self):
+        return len(self.X)
+
+    def do_mixup(self, X, y):
+        idx = np.random.randint(0, len(self))
+        lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+        X = lam * X + (1 - lam) * self.X[idx]
+        y = lam * y + (1 - lam) * self.y[idx]
+
+        # X = X.astype(np.float32, copy=False)
+        # y = y.astype(np.float32, copy=False)
+
+        return X, y
+
+    def __getitem__(self, idx):
+        X = self.X[idx].copy()
+        y = self.y[idx].copy()
+
+        if np.random.uniform() < self.reduction_rate:
+            y = spec_utils.aggressively_remove_vocal(X, y, self.reduction_weight)
+
+        if np.random.uniform() < 0.5:
+            # swap channel
+            X = X[::-1].copy()
+            y = y[::-1].copy()
+        if np.random.uniform() < 0.02:
+            # inst
+            X = y.copy()
+        if np.random.uniform() < 0.02:
+            # mono
+            X[:] = X.mean(axis=0, keepdims=True)
+            y[:] = y.mean(axis=0, keepdims=True)
+
+        if np.random.uniform() < self.mixup_rate:
+            X, y = self.do_mixup(X, y)
+
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag, idx
+
+
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
     def __init__(self, patch_list):
@@ -64,7 +117,7 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
                 if list(pair) not in val_filelist]
     elif split_mode == 'subdirs':
         if len(val_filelist) != 0:
-            raise ValueError('The `val_filelist` option is not available in `subdirs` mode')
+            raise ValueError('`val_filelist` option is not available with `subdirs` mode')
 
         train_filelist = make_pair(
             os.path.join(dataset_dir, 'training/mixtures'),
@@ -75,32 +128,6 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
             os.path.join(dataset_dir, 'validation/instruments'))
 
     return train_filelist, val_filelist
-
-
-def augment(X, y, reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
-    perm = np.random.permutation(len(X))
-    for i, idx in enumerate(tqdm(perm)):
-        if np.random.uniform() < reduction_rate:
-            y[idx] = spec_utils.reduce_vocal_aggressively(X[idx], y[idx], reduction_mask)
-
-        if np.random.uniform() < 0.5:
-            # swap channel
-            X[idx] = X[idx, ::-1]
-            y[idx] = y[idx, ::-1]
-        if np.random.uniform() < 0.02:
-            # mono
-            X[idx] = X[idx].mean(axis=0, keepdims=True)
-            y[idx] = y[idx].mean(axis=0, keepdims=True)
-        if np.random.uniform() < 0.02:
-            # inst
-            X[idx] = y[idx]
-
-        if np.random.uniform() < mixup_rate and i < len(perm) - 1:
-            lam = np.random.beta(mixup_alpha, mixup_alpha)
-            X[idx] = lam * X[idx] + (1 - lam) * X[perm[i + 1]]
-            y[idx] = lam * y[idx] + (1 - lam) * y[perm[i + 1]]
-
-    return X, y
 
 
 def make_padding(width, cropsize, offset):
@@ -164,7 +191,19 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
                 np.savez(
                     outpath,
                     X=X_pad[:, :, start:start + cropsize],
-                    y=y_pad[:, :, start:start + cropsize])
+                    y=y_pad[:, :, start:start + cropsize]
+                )
             patch_list.append(outpath)
 
-    return VocalRemoverValidationSet(patch_list)
+    return patch_list
+
+
+def get_oracle_data(X, y, oracle_loss, oracle_rate, oracle_drop_rate):
+    k = int(len(X) * oracle_rate * (1 / (1 - oracle_drop_rate)))
+    n = int(len(X) * oracle_rate)
+    indices = np.argsort(oracle_loss)[::-1][:k]
+    indices = np.random.choice(indices, n, replace=False)
+    oracle_X = X[indices].copy()
+    oracle_y = y[indices].copy()
+
+    return oracle_X, oracle_y, indices

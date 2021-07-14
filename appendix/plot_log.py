@@ -17,7 +17,7 @@ if __name__ == '__main__':
     plt.rcParams['legend.fontsize'] = 12
 
     mean_val = np.mean(split_val, axis=1)
-    min_val = np.min(split_val, axis=1)
+    min_val = [np.min(split_val[:i + 1]) for i in range(len(split_val))]
     std_val = np.std(split_val, axis=1)
     x_val = np.arange(len(mean_val))
     plt.fill_between(

@@ -60,15 +60,12 @@ def spectrogram_to_image(spec, mode='magnitude'):
     return img
 
 
-def reduce_vocal_aggressively(X, y, softmask):
+def aggressively_remove_vocal(X, y, weight):
     X_mag = np.abs(X)
     y_mag = np.abs(y)
+    v_mag = np.abs(X_mag - y_mag)
 
-    y_mag_tmp = np.clip(y_mag, 0, X_mag)
-    v_mag_tmp = X_mag - y_mag_tmp
-    v_mask = v_mag_tmp > y_mag_tmp
-
-    y_mag = np.clip(y_mag - v_mag_tmp * v_mask * softmask, 0, np.inf)
+    y_mag = np.clip(y_mag - v_mag * weight, 0, np.inf)
 
     return y_mag * np.exp(1.j * np.angle(y))
 
@@ -170,12 +167,15 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
 
 
 def spectrogram_to_wave(spec, hop_length=1024):
-    spec_left = np.asfortranarray(spec[0])
-    spec_right = np.asfortranarray(spec[1])
+    if spec.ndim == 2:
+        wave = librosa.istft(spec, hop_length=hop_length)
+    elif spec.ndim == 3:
+        spec_left = np.asfortranarray(spec[0])
+        spec_right = np.asfortranarray(spec[1])
 
-    wave_left = librosa.istft(spec_left, hop_length=hop_length)
-    wave_right = librosa.istft(spec_right, hop_length=hop_length)
-    wave = np.asfortranarray([wave_left, wave_right])
+        wave_left = librosa.istft(spec_left, hop_length=hop_length)
+        wave_right = librosa.istft(spec_right, hop_length=hop_length)
+        wave = np.asfortranarray([wave_left, wave_right])
 
     return wave
 
@@ -183,6 +183,16 @@ def spectrogram_to_wave(spec, hop_length=1024):
 if __name__ == "__main__":
     import cv2
     import sys
+
+    bins = 2048 // 2 + 1
+    freq_to_bin = 2 * bins / 44100
+    unstable_bins = int(180 * freq_to_bin)
+    stable_bins = int(11025 * freq_to_bin)
+    reduction_weight = np.concatenate([
+        np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1), dtype=np.float32),
+    ], axis=0) * 0.2
 
     X, _ = librosa.load(
         sys.argv[1], 44100, False, dtype=np.float32, res_type='kaiser_fast')
@@ -195,14 +205,11 @@ if __name__ == "__main__":
 
     X_mag = np.abs(X_spec)
     y_mag = np.abs(y_spec)
+    v_mag = np.abs(X_mag - y_mag)
 
-    y_mag = np.clip(y_mag, 0, X_mag)
-    v_mag = X_mag - y_mag
-
+    y_mag = np.clip(y_mag - v_mag * reduction_weight, 0, np.inf)
     y_spec = y_mag * np.exp(1j * np.angle(y_spec))
     v_spec = v_mag * np.exp(1j * np.angle(X_spec))
-
-    # v_spec *= v_mag > y_mag
 
     X_image = spectrogram_to_image(X_spec)
     y_image = spectrogram_to_image(y_spec)

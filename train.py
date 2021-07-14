@@ -2,6 +2,7 @@ import argparse
 from datetime import datetime
 import gc
 import json
+import logging
 import os
 import random
 
@@ -15,37 +16,51 @@ from lib import nets
 from lib import spec_utils
 
 
-def train_inner_epoch(X, y, model, device, optimizer, batchsize):
+def setup_logger(name, logfile='LOGFILENAME.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+
+    fh = logging.FileHandler(logfile, encoding='utf8')
+    fh.setLevel(logging.DEBUG)
+    fh_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s')
+    fh.setFormatter(fh_formatter)
+
+    sh = logging.StreamHandler()
+    sh.setLevel(logging.INFO)
+
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+
+    return logger
+
+
+def train_inner_epoch(dataloader, model, device, optimizer, oracle_loss):
     model.train()
     sum_loss = 0
-    crit = nn.L1Loss()
-    perm = np.random.permutation(len(X))
+    crit = nn.L1Loss(reduction='none')
 
-    for i in range(0, len(X), batchsize):
-        local_perm = perm[i: i + batchsize]
-
-        X_batch = X[local_perm]
-        y_batch = y[local_perm]
-
-        X_mag = np.abs(X_batch)
-        y_mag = np.abs(y_batch)
-
-        X_mag = torch.from_numpy(X_mag).to(device)
-        y_mag = torch.from_numpy(y_mag).to(device)
+    for X_batch, y_batch, indices in dataloader:
+        X_batch = X_batch.to(device)
+        y_batch = y_batch.to(device)
 
         model.zero_grad()
-        pred, aux1, aux2 = model(X_mag)
+        pred, aux = model(X_batch)
 
-        loss = crit(pred, y_mag) * 0.8
-        loss += crit(aux1, y_mag) * 0.1
-        loss += crit(aux2, y_mag) * 0.1
+        loss = crit(pred, y_batch) * 0.8
+        loss_numpy = loss.detach().cpu().numpy()
+        oracle_loss[indices.numpy()] += loss_numpy.mean(axis=(1, 2, 3))
+
+        loss += crit(aux, y_batch) * 0.2
+        loss = torch.mean(loss)
 
         loss.backward()
         optimizer.step()
 
         sum_loss += loss.item() * len(X_batch)
 
-    return sum_loss / len(X)
+    return sum_loss / len(dataloader.dataset)
 
 
 def val_inner_epoch(dataloader, model, device):
@@ -86,22 +101,25 @@ def main():
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--val_rate', '-v', type=float, default=0.2)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
-    p.add_argument('--val_batchsize', '-b', type=int, default=2)
-    p.add_argument('--val_cropsize', '-C', type=int, default=512)
+    p.add_argument('--val_batchsize', '-b', type=int, default=8)
+    p.add_argument('--val_cropsize', '-C', type=int, default=256)
     p.add_argument('--epoch', '-E', type=int, default=60)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
     p.add_argument('--reduction_level', '-L', type=float, default=0.2)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
+    p.add_argument('--oracle_rate', '-o', type=float, default=0.0)
+    p.add_argument('--oracle_drop_rate', '-D', type=float, default=0.5)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
     p.add_argument('--debug', action='store_true')
     args = p.parse_args()
 
+    logger.debug(vars(args))
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
 
     val_filelist = []
     if args.val_filelist is not None:
@@ -112,10 +130,11 @@ def main():
         dataset_dir=args.dataset,
         split_mode=args.split_mode,
         val_rate=args.val_rate,
-        val_filelist=val_filelist)
+        val_filelist=val_filelist
+    )
 
     if args.debug:
-        print('### DEBUG MODE')
+        logger.info('### DEBUG MODE')
         train_filelist = train_filelist[:1]
         val_filelist = val_filelist[:1]
     elif args.val_filelist is None:
@@ -123,10 +142,10 @@ def main():
             json.dump(val_filelist, f, ensure_ascii=False)
 
     for i, (X_fname, y_fname) in enumerate(val_filelist):
-        print(i + 1, os.path.basename(X_fname), os.path.basename(y_fname))
+        logger.info('{} {} {}'.format(i + 1, os.path.basename(X_fname), os.path.basename(y_fname)))
 
     device = torch.device('cpu')
-    model = nets.CascadedASPPNet(args.n_fft)
+    model = nets.CascadedNet(args.n_fft)
     if args.pretrained_model is not None:
         model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
@@ -135,7 +154,8 @@ def main():
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
-        lr=args.learning_rate)
+        lr=args.learning_rate
+    )
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -143,34 +163,42 @@ def main():
         patience=args.lr_decay_patience,
         threshold=1e-6,
         min_lr=args.lr_min,
-        verbose=True)
+        verbose=True
+    )
 
-    val_dataset = dataset.make_validation_set(
+    patch_list = dataset.make_validation_set(
         filelist=val_filelist,
         cropsize=args.val_cropsize,
         sr=args.sr,
         hop_length=args.hop_length,
         n_fft=args.n_fft,
-        offset=model.offset)
+        offset=model.offset
+    )
+
+    val_dataset = dataset.VocalRemoverValidationSet(
+        patch_list=patch_list
+    )
 
     val_dataloader = torch.utils.data.DataLoader(
         dataset=val_dataset,
         batch_size=args.val_batchsize,
         shuffle=False,
-        num_workers=4)
+        num_workers=4
+    )
 
     bins = args.n_fft // 2 + 1
     freq_to_bin = 2 * bins / args.sr
-    unstable_bins = int(160 * freq_to_bin)
-    reduction_bins = int(16000 * freq_to_bin)
-    reduction_mask = np.concatenate([
-        np.linspace(0, 1, unstable_bins)[:, None],
-        np.linspace(1, 0, reduction_bins - unstable_bins)[:, None],
-        np.zeros((bins - reduction_bins, 1))
+    unstable_bins = int(180 * freq_to_bin)
+    stable_bins = int(11025 * freq_to_bin)
+    reduction_weight = np.concatenate([
+        np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1), dtype=np.float32)
     ], axis=0) * args.reduction_level
 
     log = []
     best_loss = np.inf
+    oracle_X = oracle_y = oracle_indices = None
     for epoch in range(args.epoch):
         X_train, y_train = dataset.make_training_set(
             filelist=train_filelist,
@@ -179,46 +207,77 @@ def main():
             sr=args.sr,
             hop_length=args.hop_length,
             n_fft=args.n_fft,
-            offset=model.offset)
+            offset=model.offset
+        )
 
-        X_train, y_train = dataset.augment(
+        if oracle_indices is not None:
+            oracle_indices = np.random.permutation(len(X_train))[:len(oracle_X)]
+            X_train[oracle_indices] = oracle_X
+            y_train[oracle_indices] = oracle_y
+
+        train_dataset = dataset.VocalRemoverTrainingSet(
             X_train, y_train,
+            oracle_indices=oracle_indices,
             reduction_rate=args.reduction_rate,
-            reduction_mask=reduction_mask,
+            reduction_weight=reduction_weight,
             mixup_rate=args.mixup_rate,
-            mixup_alpha=args.mixup_alpha)
+            mixup_alpha=args.mixup_alpha
+        )
 
-        print('# epoch', epoch)
+        train_dataloader = torch.utils.data.DataLoader(
+            dataset=train_dataset,
+            batch_size=args.batchsize,
+            shuffle=True
+        )
+
+        logger.info('# epoch {}'.format(epoch))
+        oracle_loss = np.zeros(len(train_dataset))
         for inner_epoch in range(args.inner_epoch):
-            print('  * inner epoch {}'.format(inner_epoch))
+            logger.info('  * inner epoch {}'.format(inner_epoch))
 
             train_loss = train_inner_epoch(
-                X_train, y_train,
-                model=model,
-                device=device,
-                optimizer=optimizer,
-                batchsize=args.batchsize)
-
+                train_dataloader, model, device, optimizer, oracle_loss)
             val_loss = val_inner_epoch(val_dataloader, model, device)
 
-            print('    * training loss = {:.6f}, validation loss = {:.6f}'
-                  .format(train_loss, val_loss))
+            logger.info(
+                '    * training loss = {:.6f}, validation loss = {:.6f}'
+                .format(train_loss, val_loss)
+            )
 
             scheduler.step(val_loss)
 
             if val_loss < best_loss:
                 best_loss = val_loss
-                print('    * best validation loss')
+                logger.info('    * best validation loss')
                 model_path = 'models/model_iter{}.pth'.format(epoch)
                 torch.save(model.state_dict(), model_path)
 
             log.append([train_loss, val_loss])
-            with open('log_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
+            with open('loss_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
                 json.dump(log, f, ensure_ascii=False)
 
-        del X_train, y_train
+        if args.oracle_rate > 0:
+            oracle_loss /= args.inner_epoch
+            oracle_X, oracle_y, oracle_indices = dataset.get_oracle_data(
+                X_train, y_train,
+                oracle_loss=oracle_loss,
+                oracle_rate=args.oracle_rate,
+                oracle_drop_rate=args.oracle_drop_rate
+            )
+            logger.info(
+                '  * oracle loss = {:.6f}'
+                .format(oracle_loss[oracle_indices].mean())
+            )
+
+        del X_train, y_train, train_dataset, train_dataloader
         gc.collect()
 
 
 if __name__ == '__main__':
-    main()
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    logger = setup_logger(__name__, 'train_{}.log'.format(timestamp))
+
+    try:
+        main()
+    except Exception as e:
+        logger.exception(e)
