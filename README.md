@@ -65,7 +65,7 @@ path/to/dataset/
 
 ### Train a model
 ```
-python train.py --dataset path/to/dataset --reduction_rate 0.5 --mixup_rate 0.5 --gpu 0
+python train.py --dataset path/to/dataset --reduction_rate 0.5 --mixup_rate 0.5 --oracle_rate 0.1 --gpu 0
 ```
 
 ## References
