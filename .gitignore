@@ -3,6 +3,7 @@
 *.npz
 *.pth
 *.json
+*.log
 
 *.jpg
 *.png
