@@ -11,10 +11,9 @@ from lib import spec_utils
 
 class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
-    def __init__(self, X, y, oracle_indices, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
+    def __init__(self, X, y, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
         self.X = X
         self.y = y
-        self.oracle_indices = oracle_indices
         self.reduction_rate = reduction_rate
         self.reduction_weight = reduction_weight
         self.mixup_rate = mixup_rate
@@ -132,7 +131,7 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
 
 def make_padding(width, cropsize, offset):
     left = offset
-    roi_size = cropsize - left * 2
+    roi_size = cropsize - offset * 2
     if roi_size == 0:
         roi_size = cropsize
     right = roi_size - (width % roi_size) + left

@@ -70,11 +70,9 @@ def aggressively_remove_vocal(X, y, weight):
     return y_mag * np.exp(1.j * np.angle(y))
 
 
-def mask_silence(mag, ref, thres=0.2, min_range=64, fade_size=32):
+def merge_artifacts(mag, ref, thres=0.2, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
         raise ValueError('min_range must be >= fade_area * 2')
-
-    mag = mag.copy()
 
     idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
     starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])

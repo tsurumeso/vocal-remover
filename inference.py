@@ -22,10 +22,11 @@ class VocalRemover(object):
         self.window_size = window_size
         self.postprocess = postprocess
 
-    def _inference(self, X_mag_pad, roi_size, n_window):
+    def _inference(self, X_mag_pad, roi_size):
         self.model.eval()
         with torch.no_grad():
             preds = []
+            n_window = (X_mag_pad.shape[2] - 2 * self.offset) // roi_size
             for i in tqdm(range(n_window)):
                 start = i * roi_size
                 X_mag_window = X_mag_pad[None, :, :, start:start + self.window_size]
@@ -48,10 +49,8 @@ class VocalRemover(object):
 
     def _postprocess(self, pred, X_mag, X_phase):
         if self.postprocess:
-            print('post processing...', end=' ')
             pred_vocal = np.clip(X_mag - pred, 0, np.inf)
-            pred = spec_utils.mask_silence(pred, pred_vocal)
-            print('done')
+            pred = spec_utils.merge_artifacts(pred, pred_vocal)
 
         return pred * np.exp(1.j * X_phase)
 
@@ -63,11 +62,9 @@ class VocalRemover(object):
 
         n_frame = X_mag_pre.shape[2]
         pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.window_size, self.offset)
-        n_window = int(np.ceil(n_frame / roi_size))
-
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred = self._inference(X_mag_pad, roi_size, n_window)
+        pred = self._inference(X_mag_pad, roi_size)
         pred = pred[:, :, :n_frame] * coef
 
         y_spec = self._postprocess(pred, X_mag, X_phase)
@@ -82,19 +79,15 @@ class VocalRemover(object):
 
         n_frame = X_mag_pre.shape[2]
         pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.window_size, self.offset)
-        n_window = int(np.ceil(n_frame / roi_size))
-
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred = self._inference(X_mag_pad, roi_size, n_window)
+        pred = self._inference(X_mag_pad, roi_size)
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
-        n_window += 1
-
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred_tta = self._inference(X_mag_pad, roi_size, n_window)
+        pred_tta = self._inference(X_mag_pad, roi_size)
         pred_tta = pred_tta[:, :, roi_size // 2:]
         pred = (pred[:, :, :n_frame] + pred_tta[:, :, :n_frame]) * 0.5 * coef
 

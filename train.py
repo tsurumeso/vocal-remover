@@ -217,7 +217,6 @@ def main():
 
         train_dataset = dataset.VocalRemoverTrainingSet(
             X_train, y_train,
-            oracle_indices=oracle_indices,
             reduction_rate=args.reduction_rate,
             reduction_weight=reduction_weight,
             mixup_rate=args.mixup_rate,
