@@ -102,9 +102,10 @@ def main():
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--val_rate', '-v', type=float, default=0.2)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
-    p.add_argument('--val_batchsize', '-b', type=int, default=8)
+    p.add_argument('--val_batchsize', '-b', type=int, default=6)
     p.add_argument('--val_cropsize', '-C', type=int, default=256)
-    p.add_argument('--epoch', '-E', type=int, default=60)
+    p.add_argument('--val_workers', '-w', type=int, default=6)
+    p.add_argument('--epoch', '-E', type=int, default=50)
     p.add_argument('--inner_epoch', '-e', type=int, default=4)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
     p.add_argument('--reduction_level', '-L', type=float, default=0.2)
@@ -138,7 +139,7 @@ def main():
         logger.info('### DEBUG MODE')
         train_filelist = train_filelist[:1]
         val_filelist = val_filelist[:1]
-    elif args.val_filelist is None:
+    elif args.val_filelist is None and args.split_mode == 'random':
         with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
             json.dump(val_filelist, f, ensure_ascii=False)
 
@@ -184,7 +185,7 @@ def main():
         dataset=val_dataset,
         batch_size=args.val_batchsize,
         shuffle=False,
-        num_workers=4
+        num_workers=args.val_workers
     )
 
     bins = args.n_fft // 2 + 1
