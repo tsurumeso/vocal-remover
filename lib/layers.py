@@ -57,14 +57,14 @@ class Encoder(nn.Module):
 
     def __init__(self, nin, nout, ksize=3, stride=1, pad=1, activ=nn.LeakyReLU):
         super(Encoder, self).__init__()
-        self.conv1 = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ=activ)
-        self.conv2 = Conv2DBNActiv(nout, nout, ksize, stride, pad, activ=activ)
+        self.conv1 = Conv2DBNActiv(nin, nout, ksize, stride, pad, activ=activ)
+        self.conv2 = Conv2DBNActiv(nout, nout, ksize, 1, pad, activ=activ)
 
     def __call__(self, x):
-        skip = self.conv1(x)
-        h = self.conv2(skip)
+        h = self.conv1(x)
+        h = self.conv2(h)
 
-        return h, skip
+        return h
 
 
 class Decoder(nn.Module):
@@ -77,9 +77,11 @@ class Decoder(nn.Module):
 
     def __call__(self, x, skip=None):
         x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
+
         if skip is not None:
             skip = spec_utils.crop_center(skip, x)
             x = torch.cat([x, skip], dim=1)
+
         h = self.conv1(x)
         # h = self.conv2(h)
 
@@ -91,7 +93,7 @@ class Decoder(nn.Module):
 
 class ASPPModule(nn.Module):
 
-    def __init__(self, nin, nout, dilations=(4, 8, 16), activ=nn.ReLU):
+    def __init__(self, nin, nout, dilations=(4, 8, 12), activ=nn.ReLU, dropout=False):
         super(ASPPModule, self).__init__()
         self.conv1 = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, None)),
@@ -107,10 +109,8 @@ class ASPPModule(nn.Module):
         self.conv5 = Conv2DBNActiv(
             nin, nout, 3, 1, dilations[2], dilations[2], activ=activ
         )
-        self.bottleneck = nn.Sequential(
-            Conv2DBNActiv(nout * 5, nout, 1, 1, 0, activ=activ),
-            nn.Dropout2d(0.1)
-        )
+        self.bottleneck = Conv2DBNActiv(nout * 5, nout, 1, 1, 0, activ=activ)
+        self.dropout = nn.Dropout2d(0.1) if dropout else None
 
     def forward(self, x):
         _, _, h, w = x.size()
@@ -120,8 +120,12 @@ class ASPPModule(nn.Module):
         feat4 = self.conv4(x)
         feat5 = self.conv5(x)
         out = torch.cat((feat1, feat2, feat3, feat4, feat5), dim=1)
-        bottle = self.bottleneck(out)
-        return bottle
+        out = self.bottleneck(out)
+
+        if self.dropout is not None:
+            out = self.dropout(out)
+
+        return out
 
 
 class LSTMModule(nn.Module):
