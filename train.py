@@ -48,16 +48,17 @@ def train_inner_epoch(dataloader, model, device, optimizer, oracle_loss):
         model.zero_grad()
         pred, aux = model(X_batch)
 
-        loss = crit(pred, y_batch) * 0.8
-        loss_numpy = loss.detach().cpu().numpy()
-        oracle_loss[indices.numpy()] += loss_numpy.mean(axis=(1, 2, 3))
+        loss_main = crit(pred * X_batch, y_batch)
+        loss_aux = crit(aux * X_batch, y_batch)
 
-        loss += crit(aux, y_batch) * 0.2
+        loss = loss_main * 0.8 + loss_aux * 0.2
         loss = torch.mean(loss)
 
         loss.backward()
         optimizer.step()
 
+        loss_numpy = loss_main.detach().cpu().numpy()
+        oracle_loss[indices.numpy()] += loss_numpy.mean(axis=(1, 2, 3))
         sum_loss += loss.item() * len(X_batch)
 
     return sum_loss / len(dataloader.dataset)

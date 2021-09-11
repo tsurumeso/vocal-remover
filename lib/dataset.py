@@ -28,9 +28,6 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         X = lam * X + (1 - lam) * self.X[idx]
         y = lam * y + (1 - lam) * self.y[idx]
 
-        # X = X.astype(np.float32, copy=False)
-        # y = y.astype(np.float32, copy=False)
-
         return X, y
 
     def __getitem__(self, idx):
@@ -87,11 +84,13 @@ def make_pair(mix_dir, inst_dir):
     X_list = sorted([
         os.path.join(mix_dir, fname)
         for fname in os.listdir(mix_dir)
-        if os.path.splitext(fname)[1] in input_exts])
+        if os.path.splitext(fname)[1] in input_exts
+    ])
     y_list = sorted([
         os.path.join(inst_dir, fname)
         for fname in os.listdir(inst_dir)
-        if os.path.splitext(fname)[1] in input_exts])
+        if os.path.splitext(fname)[1] in input_exts
+    ])
 
     filelist = list(zip(X_list, y_list))
 
@@ -102,7 +101,8 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
     if split_mode == 'random':
         filelist = make_pair(
             os.path.join(dataset_dir, 'mixtures'),
-            os.path.join(dataset_dir, 'instruments'))
+            os.path.join(dataset_dir, 'instruments')
+        )
 
         random.shuffle(filelist)
 
@@ -113,18 +113,21 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
         else:
             train_filelist = [
                 pair for pair in filelist
-                if list(pair) not in val_filelist]
+                if list(pair) not in val_filelist
+            ]
     elif split_mode == 'subdirs':
         if len(val_filelist) != 0:
             raise ValueError('`val_filelist` option is not available with `subdirs` mode')
 
         train_filelist = make_pair(
             os.path.join(dataset_dir, 'training/mixtures'),
-            os.path.join(dataset_dir, 'training/instruments'))
+            os.path.join(dataset_dir, 'training/instruments')
+        )
 
         val_filelist = make_pair(
             os.path.join(dataset_dir, 'validation/mixtures'),
-            os.path.join(dataset_dir, 'validation/instruments'))
+            os.path.join(dataset_dir, 'validation/instruments')
+        )
 
     return train_filelist, val_filelist
 
@@ -171,7 +174,7 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
     patch_dir = 'cs{}_sr{}_hl{}_nf{}_of{}'.format(cropsize, sr, hop_length, n_fft, offset)
     os.makedirs(patch_dir, exist_ok=True)
 
-    for i, (X_path, y_path) in enumerate(tqdm(filelist)):
+    for X_path, y_path in tqdm(filelist):
         basename = os.path.splitext(os.path.basename(X_path))[0]
 
         X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)

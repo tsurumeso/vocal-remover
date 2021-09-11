@@ -13,33 +13,33 @@ from lib import spec_utils
 from lib import utils
 
 
-class VocalRemover(object):
+class Separator(object):
 
-    def __init__(self, model, device, window_size, postprocess=False):
+    def __init__(self, model, device, cropsize, postprocess=False):
         self.model = model
         self.offset = model.offset
         self.device = device
-        self.window_size = window_size
+        self.cropsize = cropsize
         self.postprocess = postprocess
 
-    def _inference(self, X_mag_pad, roi_size):
+    def _separate(self, X_mag_pad, roi_size):
         self.model.eval()
         with torch.no_grad():
-            preds = []
-            n_window = (X_mag_pad.shape[2] - 2 * self.offset) // roi_size
-            for i in tqdm(range(n_window)):
+            mask = []
+            patches = (X_mag_pad.shape[2] - 2 * self.offset) // roi_size
+            for i in tqdm(range(patches)):
                 start = i * roi_size
-                X_mag_window = X_mag_pad[None, :, :, start:start + self.window_size]
-                X_mag_window = torch.from_numpy(X_mag_window).to(self.device)
+                X_mag_crop = X_mag_pad[None, :, :, start:start + self.cropsize]
+                X_mag_crop = torch.from_numpy(X_mag_crop).to(self.device)
 
-                pred = self.model.predict(X_mag_window)
+                pred = self.model.predict_mask(X_mag_crop)
 
                 pred = pred.detach().cpu().numpy()
-                preds.append(pred[0])
+                mask.append(pred[0])
 
-            pred = np.concatenate(preds, axis=2)
+            mask = np.concatenate(mask, axis=2)
 
-        return pred
+        return mask
 
     def _preprocess(self, X_spec):
         X_mag = np.abs(X_spec)
@@ -47,53 +47,54 @@ class VocalRemover(object):
 
         return X_mag, X_phase
 
-    def _postprocess(self, pred, X_mag, X_phase):
+    def _postprocess(self, mask, X_mag, X_phase):
         if self.postprocess:
-            pred_vocal = np.clip(X_mag - pred, 0, np.inf)
-            pred = spec_utils.merge_artifacts(pred, pred_vocal)
+            mask = spec_utils.merge_artifacts(mask)
 
-        return pred * np.exp(1.j * X_phase)
+        return mask * X_mag * np.exp(1.j * X_phase)
 
-    def inference(self, X_spec):
+    def separate(self, X_spec):
         X_mag, X_phase = self._preprocess(X_spec)
 
         coef = X_mag.max()
         X_mag_pre = X_mag / coef
 
         n_frame = X_mag_pre.shape[2]
-        pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.window_size, self.offset)
+        pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.cropsize, self.offset)
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred = self._inference(X_mag_pad, roi_size)
-        pred = pred[:, :, :n_frame] * coef
+        mask = self._separate(X_mag_pad, roi_size)
+        mask = mask[:, :, :n_frame]
 
-        y_spec = self._postprocess(pred, X_mag, X_phase)
+        y_spec = self._postprocess(mask, X_mag, X_phase)
+        v_spec = X_spec - y_spec
 
-        return y_spec
+        return y_spec, v_spec
 
-    def inference_tta(self, X_spec):
+    def separate_tta(self, X_spec):
         X_mag, X_phase = self._preprocess(X_spec)
 
         coef = X_mag.max()
         X_mag_pre = X_mag / coef
 
         n_frame = X_mag_pre.shape[2]
-        pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.window_size, self.offset)
+        pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.cropsize, self.offset)
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred = self._inference(X_mag_pad, roi_size)
+        mask = self._separate(X_mag_pad, roi_size)
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
         X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
 
-        pred_tta = self._inference(X_mag_pad, roi_size)
-        pred_tta = pred_tta[:, :, roi_size // 2:]
-        pred = (pred[:, :, :n_frame] + pred_tta[:, :, :n_frame]) * 0.5 * coef
+        mask_tta = self._separate(X_mag_pad, roi_size)
+        mask_tta = mask_tta[:, :, roi_size // 2:]
+        mask = (mask[:, :, :n_frame] + mask_tta[:, :, :n_frame]) * 0.5
 
-        y_spec = self._postprocess(pred, X_mag, X_phase)
+        y_spec = self._postprocess(mask, X_mag, X_phase)
+        v_spec = X_spec - y_spec
 
-        return y_spec
+        return y_spec, v_spec
 
 
 def main():
@@ -104,7 +105,7 @@ def main():
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--n_fft', '-f', type=int, default=2048)
     p.add_argument('--hop_length', '-H', type=int, default=1024)
-    p.add_argument('--window_size', '-w', type=int, default=256)
+    p.add_argument('--cropsize', '-c', type=int, default=256)
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
@@ -133,12 +134,12 @@ def main():
     X = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
 
-    vr = VocalRemover(model, device, args.window_size, args.postprocess)
+    sp = Separator(model, device, args.cropsize, args.postprocess)
 
     if args.tta:
-        y_spec = vr.inference_tta(X)
+        y_spec, v_spec = sp.separate_tta(X)
     else:
-        y_spec = vr.inference(X)
+        y_spec, v_spec = sp.separate(X)
 
     print('inverse stft of instruments...', end=' ')
     wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
@@ -146,7 +147,6 @@ def main():
     sf.write('{}_Instruments.wav'.format(basename), wave.T, sr)
 
     print('inverse stft of vocals...', end=' ')
-    v_spec = X - y_spec
     wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
     print('done')
     sf.write('{}_Vocals.wav'.format(basename), wave.T, sr)

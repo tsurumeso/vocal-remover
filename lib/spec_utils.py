@@ -70,38 +70,40 @@ def aggressively_remove_vocal(X, y, weight):
     return y_mag * np.exp(1.j * np.angle(y))
 
 
-def merge_artifacts(mag, ref, thres=0.2, min_range=64, fade_size=32):
+def merge_artifacts(y_mask, thres=0.05, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
-        raise ValueError('min_range must be >= fade_area * 2')
+        raise ValueError('min_range must be >= fade_size * 2')
 
-    idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
-    starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
-    ends = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
-    uninformative = np.where(ends - starts > min_range)[0]
-    if len(uninformative) > 0:
-        starts = starts[uninformative]
-        ends = ends[uninformative]
+    idx = np.where(y_mask.min(axis=(0, 1)) > thres)[0]
+    start_idx = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
+    end_idx = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
+    artifact_idx = np.where(end_idx - start_idx > min_range)[0]
+    weight = np.zeros_like(y_mask)
+    if len(artifact_idx) > 0:
+        start_idx = start_idx[artifact_idx]
+        end_idx = end_idx[artifact_idx]
         old_e = None
-        for s, e in zip(starts, ends):
+        for s, e in zip(start_idx, end_idx):
             if old_e is not None and s - old_e < fade_size:
                 s = old_e - fade_size * 2
 
             if s != 0:
-                weight = np.linspace(0, 1, fade_size)
-                mag[:, :, s:s + fade_size] += weight * ref[:, :, s:s + fade_size]
+                weight[:, :, s:s + fade_size] = np.linspace(0, 1, fade_size)
             else:
                 s -= fade_size
 
-            if e != mag.shape[2]:
-                weight = np.linspace(1, 0, fade_size)
-                mag[:, :, e - fade_size:e] += weight * ref[:, :, e - fade_size:e]
+            if e != y_mask.shape[2]:
+                weight[:, :, e - fade_size:e] = np.linspace(1, 0, fade_size)
             else:
                 e += fade_size
 
-            mag[:, :, s + fade_size:e - fade_size] += ref[:, :, s + fade_size:e - fade_size]
+            weight[:, :, s + fade_size:e - fade_size] = 1
             old_e = e
 
-    return mag
+    v_mask = 1 - y_mask
+    y_mask += weight * v_mask
+
+    return y_mask
 
 
 def align_wave_head_and_tail(a, b, sr):
@@ -157,7 +159,6 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
         X = wave_to_spectrogram(X, hop_length, n_fft)
         y = wave_to_spectrogram(y, hop_length, n_fft)
 
-        _, ext = os.path.splitext(mix_path)
         np.save(mix_cache_path, X)
         np.save(inst_cache_path, y)
 
@@ -189,7 +190,7 @@ if __name__ == "__main__":
     reduction_weight = np.concatenate([
         np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
         np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
-        np.zeros((bins - stable_bins, 1), dtype=np.float32),
+        np.zeros((bins - stable_bins, 1), dtype=np.float32)
     ], axis=0) * 0.2
 
     X, _ = librosa.load(
@@ -209,9 +210,9 @@ if __name__ == "__main__":
     y_spec = y_mag * np.exp(1j * np.angle(y_spec))
     v_spec = v_mag * np.exp(1j * np.angle(X_spec))
 
-    X_image = spectrogram_to_image(X_spec)
-    y_image = spectrogram_to_image(y_spec)
-    v_image = spectrogram_to_image(v_spec)
+    X_image = spectrogram_to_image(X_mag)
+    y_image = spectrogram_to_image(y_mag)
+    v_image = spectrogram_to_image(v_mag)
 
     cv2.imwrite('test_X.jpg', X_image)
     cv2.imwrite('test_y.jpg', y_image)
