@@ -10,10 +10,9 @@
 
 *.wav
 *.m4a
-*.3gp
-*.oma
 *.mp3
 *.mp4
+*.flac
 
 *~
 .vscode/
