@@ -11,28 +11,49 @@ from lib import spec_utils
 
 class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
-    def __init__(self, X, y, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
-        self.X = X
-        self.y = y
+    def __init__(self, training_set, cropsize, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
+        self.training_set = training_set
+        self.cropsize = cropsize
         self.reduction_rate = reduction_rate
         self.reduction_weight = reduction_weight
         self.mixup_rate = mixup_rate
         self.mixup_alpha = mixup_alpha
 
     def __len__(self):
-        return len(self.X)
+        return len(self.training_set)
+
+    def do_crop(self, X_path, y_path):
+        X_mmap = np.load(X_path, mmap_mode='r')
+        y_mmap = np.load(y_path, mmap_mode='r')
+
+        start = np.random.randint(0, X_mmap.shape[2] - self.cropsize)
+        end = start + self.cropsize
+
+        X_crop = np.array(X_mmap[:, :, start:end], copy=True)
+        y_crop = np.array(y_mmap[:, :, start:end], copy=True)
+
+        return X_crop, y_crop
 
     def do_mixup(self, X, y):
         idx = np.random.randint(0, len(self))
+        X_path, y_path, coef = self.training_set[idx]
+
+        X_i, y_i = self.do_crop(X_path, y_path)
+        X_i /= coef
+        y_i /= coef
+
         lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
-        X = lam * X + (1 - lam) * self.X[idx]
-        y = lam * y + (1 - lam) * self.y[idx]
+        X = lam * X + (1 - lam) * X_i
+        y = lam * y + (1 - lam) * y_i
 
         return X, y
 
     def __getitem__(self, idx):
-        X = self.X[idx].copy()
-        y = self.y[idx].copy()
+        X_path, y_path, coef = self.training_set[idx]
+
+        X, y = self.do_crop(X_path, y_path)
+        X /= coef
+        y /= coef
 
         if np.random.uniform() < self.reduction_rate:
             y = spec_utils.aggressively_remove_vocal(X, y, self.reduction_weight)
@@ -55,7 +76,7 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         X_mag = np.abs(X)
         y_mag = np.abs(y)
 
-        return X_mag, y_mag, idx
+        return X_mag, y_mag
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
@@ -142,31 +163,16 @@ def make_padding(width, cropsize, offset):
     return left, right, roi_size
 
 
-def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset):
-    len_dataset = patches * len(filelist)
-
-    X_dataset = np.zeros(
-        (len_dataset, 2, n_fft // 2 + 1, cropsize), dtype=np.complex64)
-    y_dataset = np.zeros(
-        (len_dataset, 2, n_fft // 2 + 1, cropsize), dtype=np.complex64)
-
-    for i, (X_path, y_path) in enumerate(tqdm(filelist)):
-        X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
+def make_training_set(filelist, sr, hop_length, n_fft):
+    ret = []
+    for X_path, y_path in tqdm(filelist):
+        X, y, X_cache_path, y_cache_path = spec_utils.cache_or_load(
+            X_path, y_path, sr, hop_length, n_fft
+        )
         coef = np.max([np.abs(X).max(), np.abs(y).max()])
-        X, y = X / coef, y / coef
+        ret.append([X_cache_path, y_cache_path, coef])
 
-        l, r, roi_size = make_padding(X.shape[2], cropsize, offset)
-        X_pad = np.pad(X, ((0, 0), (0, 0), (l, r)), mode='constant')
-        y_pad = np.pad(y, ((0, 0), (0, 0), (l, r)), mode='constant')
-
-        starts = np.random.randint(0, X_pad.shape[2] - cropsize, patches)
-        ends = starts + cropsize
-        for j in range(patches):
-            idx = i * patches + j
-            X_dataset[idx] = X_pad[:, :, starts[j]:ends[j]]
-            y_dataset[idx] = y_pad[:, :, starts[j]:ends[j]]
-
-    return X_dataset, y_dataset
+    return ret
 
 
 def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
@@ -177,7 +183,7 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
     for X_path, y_path in tqdm(filelist):
         basename = os.path.splitext(os.path.basename(X_path))[0]
 
-        X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
+        X, y, _, _ = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
         coef = np.max([np.abs(X).max(), np.abs(y).max()])
         X, y = X / coef, y / coef
 
@@ -209,3 +215,30 @@ def get_oracle_data(X, y, oracle_loss, oracle_rate, oracle_drop_rate):
     oracle_y = y[indices].copy()
 
     return oracle_X, oracle_y, indices
+
+
+if __name__ == "__main__":
+    import sys
+    import utils
+
+    mix_dir = sys.argv[1]
+    inst_dir = sys.argv[2]
+    outdir = sys.argv[3]
+
+    os.makedirs(outdir, exist_ok=True)
+
+    filelist = make_pair(mix_dir, inst_dir)
+    for mix_path, inst_path in tqdm(filelist):
+        mix_basename = os.path.splitext(os.path.basename(mix_path))[0]
+
+        X_spec, y_spec, _, _ = spec_utils.cache_or_load(
+            mix_path, inst_path, 44100, 1024, 2048
+        )
+
+        X_mag = np.abs(X_spec)
+        y_mag = np.abs(y_spec)
+        v_mag = np.abs(X_mag - y_mag) * (X_mag > y_mag)
+
+        outpath = '{}/{}_Vocal.jpg'.format(outdir, mix_basename)
+        v_image = spec_utils.spectrogram_to_image(v_mag)
+        utils.imwrite(outpath, v_image)

@@ -1,6 +1,5 @@
 import argparse
 from datetime import datetime
-import gc
 import json
 import logging
 import os
@@ -36,12 +35,12 @@ def setup_logger(name, logfile='LOGFILENAME.log'):
     return logger
 
 
-def train_inner_epoch(dataloader, model, device, optimizer, oracle_loss):
+def train_epoch(dataloader, model, device, optimizer):
     model.train()
     sum_loss = 0
-    crit = nn.L1Loss(reduction='none')
+    crit = nn.L1Loss()
 
-    for X_batch, y_batch, indices in dataloader:
+    for X_batch, y_batch in dataloader:
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device)
 
@@ -52,19 +51,16 @@ def train_inner_epoch(dataloader, model, device, optimizer, oracle_loss):
         loss_aux = crit(aux * X_batch, y_batch)
 
         loss = loss_main * 0.8 + loss_aux * 0.2
-        loss = torch.mean(loss)
 
         loss.backward()
         optimizer.step()
 
-        loss_numpy = loss_main.detach().cpu().numpy()
-        oracle_loss[indices.numpy()] += loss_numpy.mean(axis=(1, 2, 3))
         sum_loss += loss.item() * len(X_batch)
 
     return sum_loss / len(dataloader.dataset)
 
 
-def val_inner_epoch(dataloader, model, device):
+def validate_epoch(dataloader, model, device):
     model.eval()
     sum_loss = 0
     crit = nn.L1Loss()
@@ -105,14 +101,11 @@ def main():
     p.add_argument('--val_batchsize', '-b', type=int, default=6)
     p.add_argument('--val_cropsize', '-C', type=int, default=256)
     p.add_argument('--val_workers', '-w', type=int, default=6)
-    p.add_argument('--epoch', '-E', type=int, default=50)
-    p.add_argument('--inner_epoch', '-e', type=int, default=4)
+    p.add_argument('--epoch', '-E', type=int, default=200)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
     p.add_argument('--reduction_level', '-L', type=float, default=0.2)
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
-    p.add_argument('--oracle_rate', '-o', type=float, default=0.0)
-    p.add_argument('--oracle_drop_rate', '-D', type=float, default=0.5)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
     p.add_argument('--debug', action='store_true')
     args = p.parse_args()
@@ -168,6 +161,39 @@ def main():
         verbose=True
     )
 
+    bins = args.n_fft // 2 + 1
+    freq_to_bin = 2 * bins / args.sr
+    unstable_bins = int(180 * freq_to_bin)
+    stable_bins = int(11025 * freq_to_bin)
+    reduction_weight = np.concatenate([
+        np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1), dtype=np.float32)
+    ], axis=0) * args.reduction_level
+
+    training_set = dataset.make_training_set(
+        filelist=train_filelist,
+        sr=args.sr,
+        hop_length=args.hop_length,
+        n_fft=args.n_fft
+    )
+
+    train_dataset = dataset.VocalRemoverTrainingSet(
+        training_set * args.patches,
+        cropsize=args.cropsize,
+        reduction_rate=args.reduction_rate,
+        reduction_weight=reduction_weight,
+        mixup_rate=args.mixup_rate,
+        mixup_alpha=args.mixup_alpha
+    )
+
+    train_dataloader = torch.utils.data.DataLoader(
+        dataset=train_dataset,
+        batch_size=args.batchsize,
+        shuffle=True,
+        num_workers=args.val_workers
+    )
+
     patch_list = dataset.make_validation_set(
         filelist=val_filelist,
         cropsize=args.val_cropsize,
@@ -188,90 +214,29 @@ def main():
         num_workers=args.val_workers
     )
 
-    bins = args.n_fft // 2 + 1
-    freq_to_bin = 2 * bins / args.sr
-    unstable_bins = int(180 * freq_to_bin)
-    stable_bins = int(11025 * freq_to_bin)
-    reduction_weight = np.concatenate([
-        np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
-        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
-        np.zeros((bins - stable_bins, 1), dtype=np.float32)
-    ], axis=0) * args.reduction_level
-
     log = []
     best_loss = np.inf
-    oracle_X = oracle_y = oracle_indices = None
     for epoch in range(args.epoch):
-        X_train, y_train = dataset.make_training_set(
-            filelist=train_filelist,
-            cropsize=args.cropsize,
-            patches=args.patches,
-            sr=args.sr,
-            hop_length=args.hop_length,
-            n_fft=args.n_fft,
-            offset=model.offset
-        )
-
-        if oracle_indices is not None:
-            oracle_indices = np.random.permutation(len(X_train))[:len(oracle_X)]
-            X_train[oracle_indices] = oracle_X
-            y_train[oracle_indices] = oracle_y
-
-        train_dataset = dataset.VocalRemoverTrainingSet(
-            X_train, y_train,
-            reduction_rate=args.reduction_rate,
-            reduction_weight=reduction_weight,
-            mixup_rate=args.mixup_rate,
-            mixup_alpha=args.mixup_alpha
-        )
-
-        train_dataloader = torch.utils.data.DataLoader(
-            dataset=train_dataset,
-            batch_size=args.batchsize,
-            shuffle=True
-        )
-
         logger.info('# epoch {}'.format(epoch))
-        oracle_loss = np.zeros(len(train_dataset))
-        for inner_epoch in range(args.inner_epoch):
-            logger.info('  * inner epoch {}'.format(inner_epoch))
+        train_loss = train_epoch(train_dataloader, model, device, optimizer)
+        val_loss = validate_epoch(val_dataloader, model, device)
 
-            train_loss = train_inner_epoch(
-                train_dataloader, model, device, optimizer, oracle_loss)
-            val_loss = val_inner_epoch(val_dataloader, model, device)
+        logger.info(
+            '  * training loss = {:.6f}, validation loss = {:.6f}'
+            .format(train_loss, val_loss)
+        )
 
-            logger.info(
-                '    * training loss = {:.6f}, validation loss = {:.6f}'
-                .format(train_loss, val_loss)
-            )
+        scheduler.step(val_loss)
 
-            scheduler.step(val_loss)
+        if val_loss < best_loss:
+            best_loss = val_loss
+            logger.info('    * best validation loss')
+            model_path = 'models/model_iter{}.pth'.format(epoch)
+            torch.save(model.state_dict(), model_path)
 
-            if val_loss < best_loss:
-                best_loss = val_loss
-                logger.info('    * best validation loss')
-                model_path = 'models/model_iter{}.pth'.format(epoch)
-                torch.save(model.state_dict(), model_path)
-
-            log.append([train_loss, val_loss])
-            with open('loss_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
-                json.dump(log, f, ensure_ascii=False)
-
-        if args.oracle_rate > 0:
-            oracle_loss /= args.inner_epoch
-            oracle_X, oracle_y, oracle_indices = dataset.get_oracle_data(
-                X_train, y_train,
-                oracle_loss=oracle_loss,
-                oracle_rate=args.oracle_rate,
-                oracle_drop_rate=args.oracle_drop_rate
-            )
-            logger.info(
-                '  * oracle loss = {:.6f}'
-                .format(oracle_loss[oracle_indices].mean())
-            )
-
-        del X_train, y_train, train_dataset, train_dataloader
-        gc.collect()
+        log.append([train_loss, val_loss])
+        with open('loss_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
+            json.dump(log, f, ensure_ascii=False)
 
 
 if __name__ == '__main__':

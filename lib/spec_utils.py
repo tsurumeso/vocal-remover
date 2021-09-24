@@ -162,7 +162,7 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
         np.save(mix_cache_path, X)
         np.save(inst_cache_path, y)
 
-    return X, y
+    return X, y, mix_cache_path, inst_cache_path
 
 
 def spectrogram_to_wave(spec, hop_length=1024):
