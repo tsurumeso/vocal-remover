@@ -51,48 +51,46 @@ class Separator(object):
         if self.postprocess:
             mask = spec_utils.merge_artifacts(mask)
 
-        return mask * X_mag * np.exp(1.j * X_phase)
+        y_spec = mask * X_mag * np.exp(1.j * X_phase)
+        v_spec = (1 - mask) * X_mag * np.exp(1.j * X_phase)
+
+        return y_spec, v_spec
 
     def separate(self, X_spec):
         X_mag, X_phase = self._preprocess(X_spec)
 
-        coef = X_mag.max()
-        X_mag_pre = X_mag / coef
-
-        n_frame = X_mag_pre.shape[2]
+        n_frame = X_mag.shape[2]
         pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.cropsize, self.offset)
-        X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_mag_pad = np.pad(X_mag, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_mag_pad /= X_mag_pad.max()
 
         mask = self._separate(X_mag_pad, roi_size)
         mask = mask[:, :, :n_frame]
 
-        y_spec = self._postprocess(mask, X_mag, X_phase)
-        v_spec = X_spec - y_spec
+        y_spec, v_spec = self._postprocess(mask, X_mag, X_phase)
 
         return y_spec, v_spec
 
     def separate_tta(self, X_spec):
         X_mag, X_phase = self._preprocess(X_spec)
 
-        coef = X_mag.max()
-        X_mag_pre = X_mag / coef
-
-        n_frame = X_mag_pre.shape[2]
+        n_frame = X_mag.shape[2]
         pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.cropsize, self.offset)
-        X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_mag_pad = np.pad(X_mag, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_mag_pad /= X_mag_pad.max()
 
         mask = self._separate(X_mag_pad, roi_size)
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
-        X_mag_pad = np.pad(X_mag_pre, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_mag_pad = np.pad(X_mag, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_mag_pad /= X_mag_pad.max()
 
         mask_tta = self._separate(X_mag_pad, roi_size)
         mask_tta = mask_tta[:, :, roi_size // 2:]
         mask = (mask[:, :, :n_frame] + mask_tta[:, :, :n_frame]) * 0.5
 
-        y_spec = self._postprocess(mask, X_mag, X_phase)
-        v_spec = X_spec - y_spec
+        y_spec, v_spec = self._postprocess(mask, X_mag, X_phase)
 
         return y_spec, v_spec
 
