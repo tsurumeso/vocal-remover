@@ -15,27 +15,37 @@ from lib import utils
 
 class Separator(object):
 
-    def __init__(self, model, device, cropsize, postprocess=False):
+    def __init__(self, model, device, batchsize, cropsize, postprocess=False):
         self.model = model
         self.offset = model.offset
         self.device = device
+        self.batchsize = batchsize
         self.cropsize = cropsize
         self.postprocess = postprocess
 
     def _separate(self, X_mag_pad, roi_size):
+        X_dataset = []
+        patches = (X_mag_pad.shape[2] - 2 * self.offset) // roi_size
+        for i in range(patches):
+            start = i * roi_size
+            X_mag_crop = X_mag_pad[:, :, start:start + self.cropsize]
+            X_dataset.append(X_mag_crop)
+
+        X_dataset = np.asarray(X_dataset)
+
         self.model.eval()
         with torch.no_grad():
             mask = []
-            patches = (X_mag_pad.shape[2] - 2 * self.offset) // roi_size
-            for i in tqdm(range(patches)):
-                start = i * roi_size
-                X_mag_crop = X_mag_pad[None, :, :, start:start + self.cropsize]
-                X_mag_crop = torch.from_numpy(X_mag_crop).to(self.device)
+            # To reduce the overhead, dataloader is not used.
+            for i in tqdm(range(0, patches, self.batchsize)):
+                X_batch = X_dataset[i: i + self.batchsize]
+                X_batch = torch.from_numpy(X_batch).to(self.device)
 
-                pred = self.model.predict_mask(X_mag_crop)
+                pred = self.model.predict_mask(X_batch)
 
                 pred = pred.detach().cpu().numpy()
-                mask.append(pred[0])
+                pred = np.concatenate(pred, axis=2)
+                mask.append(pred)
 
             mask = np.concatenate(mask, axis=2)
 
@@ -103,6 +113,7 @@ def main():
     p.add_argument('--sr', '-r', type=int, default=44100)
     p.add_argument('--n_fft', '-f', type=int, default=2048)
     p.add_argument('--hop_length', '-H', type=int, default=1024)
+    p.add_argument('--batchsize', '-B', type=int, default=4)
     p.add_argument('--cropsize', '-c', type=int, default=256)
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--postprocess', '-p', action='store_true')
@@ -132,7 +143,7 @@ def main():
     X = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
 
-    sp = Separator(model, device, args.cropsize, args.postprocess)
+    sp = Separator(model, device, args.batchsize, args.cropsize, args.postprocess)
 
     if args.tta:
         y_spec, v_spec = sp.separate_tta(X)
