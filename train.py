@@ -108,7 +108,7 @@ def main():
     p.add_argument('--val_filelist', '-V', type=str, default=None)
     p.add_argument('--val_batchsize', '-b', type=int, default=6)
     p.add_argument('--val_cropsize', '-C', type=int, default=256)
-    p.add_argument('--val_workers', '-w', type=int, default=6)
+    p.add_argument('--num_workers', '-w', type=int, default=6)
     p.add_argument('--epoch', '-E', type=int, default=200)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
     p.add_argument('--reduction_level', '-L', type=float, default=0.2)
@@ -199,7 +199,7 @@ def main():
         dataset=train_dataset,
         batch_size=args.batchsize,
         shuffle=True,
-        num_workers=args.val_workers
+        num_workers=args.num_workers
     )
 
     patch_list = dataset.make_validation_set(
@@ -219,7 +219,7 @@ def main():
         dataset=val_dataset,
         batch_size=args.val_batchsize,
         shuffle=False,
-        num_workers=args.val_workers
+        num_workers=args.num_workers
     )
 
     log = []
@@ -238,7 +238,7 @@ def main():
 
         if val_loss < best_loss:
             best_loss = val_loss
-            logger.info('    * best validation loss')
+            logger.info('  * best validation loss')
             model_path = 'models/model_iter{}.pth'.format(epoch)
             torch.save(model.state_dict(), model_path)
 

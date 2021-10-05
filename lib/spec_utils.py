@@ -204,6 +204,7 @@ if __name__ == "__main__":
 
     X_mag = np.abs(X_spec)
     y_mag = np.abs(y_spec)
+    # v_mag = np.clip(X_mag - y_mag, 0, np.inf)
     v_mag = np.abs(X_mag - y_mag)
 
     # y_mag = np.clip(y_mag - v_mag * reduction_weight, 0, np.inf)

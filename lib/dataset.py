@@ -6,7 +6,10 @@ import torch
 import torch.utils.data
 from tqdm import tqdm
 
-from lib import spec_utils
+try:
+    from lib import spec_utils
+except ModuleNotFoundError:
+    import spec_utils
 
 
 class VocalRemoverTrainingSet(torch.utils.data.Dataset):
@@ -237,7 +240,8 @@ if __name__ == "__main__":
 
         X_mag = np.abs(X_spec)
         y_mag = np.abs(y_spec)
-        v_mag = np.abs(X_mag - y_mag) * (X_mag > y_mag)
+        # v_mag = np.clip(X_mag - y_mag, 0, np.inf)
+        v_mag = np.abs(X_spec - y_spec)
 
         outpath = '{}/{}_Vocal.jpg'.format(outdir, mix_basename)
         v_image = spec_utils.spectrogram_to_image(v_mag)
