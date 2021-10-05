@@ -35,27 +35,34 @@ def setup_logger(name, logfile='LOGFILENAME.log'):
     return logger
 
 
-def train_epoch(dataloader, model, device, optimizer):
+def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
     model.train()
     sum_loss = 0
     crit = nn.L1Loss()
 
-    for X_batch, y_batch in dataloader:
+    for itr, (X_batch, y_batch) in enumerate(dataloader):
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device)
 
-        model.zero_grad()
         pred, aux = model(X_batch)
 
         loss_main = crit(pred * X_batch, y_batch)
         loss_aux = crit(aux * X_batch, y_batch)
 
         loss = loss_main * 0.8 + loss_aux * 0.2
+        accum_loss = loss / accumulation_steps
+        accum_loss.backward()
 
-        loss.backward()
-        optimizer.step()
+        if (itr + 1) % accumulation_steps == 0:
+            optimizer.step()
+            model.zero_grad()
 
         sum_loss += loss.item() * len(X_batch)
+
+    # the rest batch
+    if (itr + 1) % accumulation_steps != 0:
+        optimizer.step()
+        model.zero_grad()
 
     return sum_loss / len(dataloader.dataset)
 
@@ -94,6 +101,7 @@ def main():
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
     p.add_argument('--lr_decay_patience', type=int, default=6)
     p.add_argument('--batchsize', '-B', type=int, default=4)
+    p.add_argument('--accumulation_steps', '-A', type=int, default=4)
     p.add_argument('--cropsize', '-c', type=int, default=256)
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--val_rate', '-v', type=float, default=0.2)
@@ -218,7 +226,7 @@ def main():
     best_loss = np.inf
     for epoch in range(args.epoch):
         logger.info('# epoch {}'.format(epoch))
-        train_loss = train_epoch(train_dataloader, model, device, optimizer)
+        train_loss = train_epoch(train_dataloader, model, device, optimizer, args.accumulation_steps)
         val_loss = validate_epoch(val_dataloader, model, device)
 
         logger.info(
