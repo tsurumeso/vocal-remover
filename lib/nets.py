@@ -7,25 +7,25 @@ from lib import layers
 
 class BaseNet(nn.Module):
 
-    def __init__(self, nin, ch, nin_lstm, dilations=((4, 2), (8, 4), (12, 6))):
+    def __init__(self, nin, nout, min_size, nout_lstm, dilations=((4, 2), (8, 4), (12, 6))):
         super(BaseNet, self).__init__()
-        self.enc1 = layers.Conv2DBNActiv(nin, ch, 3, 1, 1)
-        self.enc2 = layers.Encoder(ch, ch * 2, 3, 2, 1)
-        self.enc3 = layers.Encoder(ch * 2, ch * 4, 3, 2, 1)
-        self.enc4 = layers.Encoder(ch * 4, ch * 6, 3, 2, 1)
-        self.enc5 = layers.Encoder(ch * 6, ch * 8, 3, 2, 1)
+        self.enc1 = layers.Conv2DBNActiv(nin, nout, 3, 1, 1)
+        self.enc2 = layers.Encoder(nout, nout * 2, 3, 2, 1)
+        self.enc3 = layers.Encoder(nout * 2, nout * 4, 3, 2, 1)
+        self.enc4 = layers.Encoder(nout * 4, nout * 6, 3, 2, 1)
+        self.enc5 = layers.Encoder(nout * 6, nout * 8, 3, 2, 1)
 
-        self.aspp = layers.ASPPModule(ch * 8, ch * 8, dilations, dropout=True)
-        self.lstm_aspp = layers.LSTMModule(ch * 8, nin_lstm)
+        self.aspp = layers.ASPPModule(nout * 8, nout * 8, dilations, dropout=True)
+        self.lstm_aspp = layers.LSTMModule(nout * 8, min_size, nout_lstm)
 
-        self.dec4 = layers.Decoder(ch * (6 + 8) + 1, ch * 6, 3, 1, 1)
+        self.dec4 = layers.Decoder(nout * (6 + 8) + 1, nout * 6, 3, 1, 1)
 
-        self.dec3 = layers.Decoder(ch * (4 + 6), ch * 4, 3, 1, 1)
+        self.dec3 = layers.Decoder(nout * (4 + 6), nout * 4, 3, 1, 1)
 
-        self.dec2 = layers.Decoder(ch * (2 + 4), ch * 2, 3, 1, 1)
-        self.lstm_dec2 = layers.LSTMModule(ch * 2, nin_lstm * 8)
+        self.dec2 = layers.Decoder(nout * (2 + 4), nout * 2, 3, 1, 1)
+        self.lstm_dec2 = layers.LSTMModule(nout * 2, min_size * 8, nout_lstm)
 
-        self.dec1 = layers.Decoder(ch * (1 + 2) + 1, ch * 1, 3, 1, 1)
+        self.dec1 = layers.Decoder(nout * (1 + 2) + 1, nout * 1, 3, 1, 1)
 
     def __call__(self, x):
         e1 = self.enc1(x)
@@ -55,27 +55,22 @@ class CascadedNet(nn.Module):
         super(CascadedNet, self).__init__()
         self.max_bin = n_fft // 2
         self.output_bin = n_fft // 2 + 1
-        self.nin_lstm = self.max_bin // 16
+        self.min_size = self.max_bin // 16
         self.offset = 64
 
-        self.stg1_low_band_bridge = layers.Conv2DBNActiv(16, 8, 1, 1, 0)
-        self.stg1_low_band_net = BaseNet(2, 16, self.nin_lstm // 2)
-        self.stg1_high_band_net = BaseNet(2, 8, self.nin_lstm // 2)
+        self.stg1_low_band_net = nn.Sequential(
+            BaseNet(2, 16, self.min_size // 2, 128),
+            layers.Conv2DBNActiv(16, 8, 1, 1, 0)
+        )
+        self.stg1_high_band_net = BaseNet(2, 8, self.min_size // 2, 64)
 
-        self.stg2_low_band_bridge = layers.Conv2DBNActiv(32, 16, 1, 1, 0)
         self.stg2_low_band_net = nn.Sequential(
-            layers.Conv2DBNActiv(18, 16, 1, 1, 0),
-            BaseNet(16, 32, self.nin_lstm // 2)
+            BaseNet(10, 32, self.min_size // 2, 128),
+            layers.Conv2DBNActiv(32, 16, 1, 1, 0)
         )
-        self.stg2_high_band_net = nn.Sequential(
-            layers.Conv2DBNActiv(10, 8, 1, 1, 0),
-            BaseNet(8, 16, self.nin_lstm // 2),
-        )
+        self.stg2_high_band_net = BaseNet(10, 16, self.min_size // 2, 64)
 
-        self.stg3_full_band_net = nn.Sequential(
-            layers.Conv2DBNActiv(26, 16, 1, 1, 0),
-            BaseNet(16, 32, self.nin_lstm)
-        )
+        self.stg3_full_band_net = BaseNet(26, 32, self.min_size, 128)
 
         self.out = nn.Conv2d(32, 2, 1, bias=False)
         self.aux_out = nn.Conv2d(24, 2, 1, bias=False)
@@ -88,13 +83,13 @@ class CascadedNet(nn.Module):
         h1_in = x[:, :, bandw:]
         l1 = self.stg1_low_band_net(l1_in)
         h1 = self.stg1_high_band_net(h1_in)
-        aux1 = torch.cat([self.stg1_low_band_bridge(l1), h1], dim=2)
+        aux1 = torch.cat([l1, h1], dim=2)
 
         l2_in = torch.cat([l1_in, l1], dim=1)
         h2_in = torch.cat([h1_in, h1], dim=1)
         l2 = self.stg2_low_band_net(l2_in)
         h2 = self.stg2_high_band_net(h2_in)
-        aux2 = torch.cat([self.stg2_low_band_bridge(l2), h2], dim=2)
+        aux2 = torch.cat([l2, h2], dim=2)
 
         f3_in = torch.cat([x, aux1, aux2], dim=1)
         f3 = self.stg3_full_band_net(f3_in)
@@ -118,8 +113,8 @@ class CascadedNet(nn.Module):
         else:
             return mask
 
-    def predict_mask(self, x_mag):
-        mask = self.forward(x_mag)
+    def predict_mask(self, x):
+        mask = self.forward(x)
 
         if self.offset > 0:
             mask = mask[:, :, :, self.offset:-self.offset]
@@ -127,9 +122,9 @@ class CascadedNet(nn.Module):
 
         return mask
 
-    def predict(self, x_mag):
-        mask = self.forward(x_mag)
-        pred_mag = x_mag * mask
+    def predict(self, x):
+        mask = self.forward(x)
+        pred_mag = x * mask
 
         if self.offset > 0:
             pred_mag = pred_mag[:, :, :, self.offset:-self.offset]

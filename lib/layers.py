@@ -130,16 +130,16 @@ class ASPPModule(nn.Module):
 
 class LSTMModule(nn.Module):
 
-    def __init__(self, nin_conv, nin_lstm):
+    def __init__(self, nin_conv, nin_lstm, nout_lstm):
         super(LSTMModule, self).__init__()
         self.conv = Conv2DBNActiv(nin_conv, 1, 1, 1, 0)
         self.lstm = nn.LSTM(
             input_size=nin_lstm,
-            hidden_size=nin_lstm // 2,
+            hidden_size=nout_lstm // 2,
             bidirectional=True
         )
         self.dense = nn.Sequential(
-            nn.Linear(nin_lstm, nin_lstm),
+            nn.Linear(nout_lstm, nin_lstm),
             nn.BatchNorm1d(nin_lstm),
             nn.ReLU()
         )

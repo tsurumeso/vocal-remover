@@ -175,8 +175,8 @@ def main():
     stable_bins = int(11025 * freq_to_bin)
     reduction_weight = np.concatenate([
         np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
-        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
-        np.zeros((bins - stable_bins, 1), dtype=np.float32)
+        np.linspace(1, 0.1, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.linspace(0.1, 0, bins - stable_bins, dtype=np.float32)[:, None]
     ], axis=0) * args.reduction_level
 
     training_set = dataset.make_training_set(
