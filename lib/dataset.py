@@ -6,7 +6,89 @@ import torch
 import torch.utils.data
 from tqdm import tqdm
 
-from lib import spec_utils
+try:
+    from lib import spec_utils
+except ModuleNotFoundError:
+    import spec_utils
+
+
+class VocalRemoverTrainingSet(torch.utils.data.Dataset):
+
+    def __init__(self, training_set, cropsize, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
+        self.training_set = training_set
+        self.cropsize = cropsize
+        self.reduction_rate = reduction_rate
+        self.reduction_weight = reduction_weight
+        self.mixup_rate = mixup_rate
+        self.mixup_alpha = mixup_alpha
+
+    def __len__(self):
+        return len(self.training_set)
+
+    def do_crop(self, X_path, y_path):
+        X_mmap = np.load(X_path, mmap_mode='r')
+        y_mmap = np.load(y_path, mmap_mode='r')
+
+        start = np.random.randint(0, X_mmap.shape[2] - self.cropsize)
+        end = start + self.cropsize
+
+        X_crop = np.array(X_mmap[:, :, start:end], copy=True)
+        y_crop = np.array(y_mmap[:, :, start:end], copy=True)
+
+        return X_crop, y_crop
+
+    def do_aug(self, X, y):
+        if np.random.uniform() < self.reduction_rate:
+            y = spec_utils.aggressively_remove_vocal(X, y, self.reduction_weight)
+
+        if np.random.uniform() < 0.5:
+            # swap channel
+            X = X[::-1].copy()
+            y = y[::-1].copy()
+
+        if np.random.uniform() < 0.01:
+            # inst
+            X = y.copy()
+
+        # if np.random.uniform() < 0.01:
+        #     # mono
+        #     X[:] = X.mean(axis=0, keepdims=True)
+        #     y[:] = y.mean(axis=0, keepdims=True)
+
+        return X, y
+
+    def do_mixup(self, X, y):
+        idx = np.random.randint(0, len(self))
+        X_path, y_path, coef = self.training_set[idx]
+
+        X_i, y_i = self.do_crop(X_path, y_path)
+        X_i /= coef
+        y_i /= coef
+
+        X_i, y_i = self.do_aug(X_i, y_i)
+
+        lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+        X = lam * X + (1 - lam) * X_i
+        y = lam * y + (1 - lam) * y_i
+
+        return X, y
+
+    def __getitem__(self, idx):
+        X_path, y_path, coef = self.training_set[idx]
+
+        X, y = self.do_crop(X_path, y_path)
+        X /= coef
+        y /= coef
+
+        X, y = self.do_aug(X, y)
+
+        if np.random.uniform() < self.mixup_rate:
+            X, y = self.do_mixup(X, y)
+
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
@@ -35,11 +117,13 @@ def make_pair(mix_dir, inst_dir):
     X_list = sorted([
         os.path.join(mix_dir, fname)
         for fname in os.listdir(mix_dir)
-        if os.path.splitext(fname)[1] in input_exts])
+        if os.path.splitext(fname)[1] in input_exts
+    ])
     y_list = sorted([
         os.path.join(inst_dir, fname)
         for fname in os.listdir(inst_dir)
-        if os.path.splitext(fname)[1] in input_exts])
+        if os.path.splitext(fname)[1] in input_exts
+    ])
 
     filelist = list(zip(X_list, y_list))
 
@@ -50,7 +134,8 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
     if split_mode == 'random':
         filelist = make_pair(
             os.path.join(dataset_dir, 'mixtures'),
-            os.path.join(dataset_dir, 'instruments'))
+            os.path.join(dataset_dir, 'instruments')
+        )
 
         random.shuffle(filelist)
 
@@ -61,51 +146,28 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
         else:
             train_filelist = [
                 pair for pair in filelist
-                if list(pair) not in val_filelist]
+                if list(pair) not in val_filelist
+            ]
     elif split_mode == 'subdirs':
         if len(val_filelist) != 0:
-            raise ValueError('The `val_filelist` option is not available in `subdirs` mode')
+            raise ValueError('`val_filelist` option is not available with `subdirs` mode')
 
         train_filelist = make_pair(
             os.path.join(dataset_dir, 'training/mixtures'),
-            os.path.join(dataset_dir, 'training/instruments'))
+            os.path.join(dataset_dir, 'training/instruments')
+        )
 
         val_filelist = make_pair(
             os.path.join(dataset_dir, 'validation/mixtures'),
-            os.path.join(dataset_dir, 'validation/instruments'))
+            os.path.join(dataset_dir, 'validation/instruments')
+        )
 
     return train_filelist, val_filelist
 
 
-def augment(X, y, reduction_rate, reduction_mask, mixup_rate, mixup_alpha):
-    perm = np.random.permutation(len(X))
-    for i, idx in enumerate(tqdm(perm)):
-        if np.random.uniform() < reduction_rate:
-            y[idx] = spec_utils.reduce_vocal_aggressively(X[idx], y[idx], reduction_mask)
-
-        if np.random.uniform() < 0.5:
-            # swap channel
-            X[idx] = X[idx, ::-1]
-            y[idx] = y[idx, ::-1]
-        if np.random.uniform() < 0.02:
-            # mono
-            X[idx] = X[idx].mean(axis=0, keepdims=True)
-            y[idx] = y[idx].mean(axis=0, keepdims=True)
-        if np.random.uniform() < 0.02:
-            # inst
-            X[idx] = y[idx]
-
-        if np.random.uniform() < mixup_rate and i < len(perm) - 1:
-            lam = np.random.beta(mixup_alpha, mixup_alpha)
-            X[idx] = lam * X[idx] + (1 - lam) * X[perm[i + 1]]
-            y[idx] = lam * y[idx] + (1 - lam) * y[perm[i + 1]]
-
-    return X, y
-
-
 def make_padding(width, cropsize, offset):
     left = offset
-    roi_size = cropsize - left * 2
+    roi_size = cropsize - offset * 2
     if roi_size == 0:
         roi_size = cropsize
     right = roi_size - (width % roi_size) + left
@@ -113,31 +175,16 @@ def make_padding(width, cropsize, offset):
     return left, right, roi_size
 
 
-def make_training_set(filelist, cropsize, patches, sr, hop_length, n_fft, offset):
-    len_dataset = patches * len(filelist)
-
-    X_dataset = np.zeros(
-        (len_dataset, 2, n_fft // 2 + 1, cropsize), dtype=np.complex64)
-    y_dataset = np.zeros(
-        (len_dataset, 2, n_fft // 2 + 1, cropsize), dtype=np.complex64)
-
-    for i, (X_path, y_path) in enumerate(tqdm(filelist)):
-        X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
+def make_training_set(filelist, sr, hop_length, n_fft):
+    ret = []
+    for X_path, y_path in tqdm(filelist):
+        X, y, X_cache_path, y_cache_path = spec_utils.cache_or_load(
+            X_path, y_path, sr, hop_length, n_fft
+        )
         coef = np.max([np.abs(X).max(), np.abs(y).max()])
-        X, y = X / coef, y / coef
+        ret.append([X_cache_path, y_cache_path, coef])
 
-        l, r, roi_size = make_padding(X.shape[2], cropsize, offset)
-        X_pad = np.pad(X, ((0, 0), (0, 0), (l, r)), mode='constant')
-        y_pad = np.pad(y, ((0, 0), (0, 0), (l, r)), mode='constant')
-
-        starts = np.random.randint(0, X_pad.shape[2] - cropsize, patches)
-        ends = starts + cropsize
-        for j in range(patches):
-            idx = i * patches + j
-            X_dataset[idx] = X_pad[:, :, starts[j]:ends[j]]
-            y_dataset[idx] = y_pad[:, :, starts[j]:ends[j]]
-
-    return X_dataset, y_dataset
+    return ret
 
 
 def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
@@ -145,10 +192,10 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
     patch_dir = 'cs{}_sr{}_hl{}_nf{}_of{}'.format(cropsize, sr, hop_length, n_fft, offset)
     os.makedirs(patch_dir, exist_ok=True)
 
-    for i, (X_path, y_path) in enumerate(tqdm(filelist)):
+    for X_path, y_path in tqdm(filelist):
         basename = os.path.splitext(os.path.basename(X_path))[0]
 
-        X, y = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
+        X, y, _, _ = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
         coef = np.max([np.abs(X).max(), np.abs(y).max()])
         X, y = X / coef, y / coef
 
@@ -164,7 +211,47 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
                 np.savez(
                     outpath,
                     X=X_pad[:, :, start:start + cropsize],
-                    y=y_pad[:, :, start:start + cropsize])
+                    y=y_pad[:, :, start:start + cropsize]
+                )
             patch_list.append(outpath)
 
-    return VocalRemoverValidationSet(patch_list)
+    return patch_list
+
+
+def get_oracle_data(X, y, oracle_loss, oracle_rate, oracle_drop_rate):
+    k = int(len(X) * oracle_rate * (1 / (1 - oracle_drop_rate)))
+    n = int(len(X) * oracle_rate)
+    indices = np.argsort(oracle_loss)[::-1][:k]
+    indices = np.random.choice(indices, n, replace=False)
+    oracle_X = X[indices].copy()
+    oracle_y = y[indices].copy()
+
+    return oracle_X, oracle_y, indices
+
+
+if __name__ == "__main__":
+    import sys
+    import utils
+
+    mix_dir = sys.argv[1]
+    inst_dir = sys.argv[2]
+    outdir = sys.argv[3]
+
+    os.makedirs(outdir, exist_ok=True)
+
+    filelist = make_pair(mix_dir, inst_dir)
+    for mix_path, inst_path in tqdm(filelist):
+        mix_basename = os.path.splitext(os.path.basename(mix_path))[0]
+
+        X_spec, y_spec, _, _ = spec_utils.cache_or_load(
+            mix_path, inst_path, 44100, 1024, 2048
+        )
+
+        X_mag = np.abs(X_spec)
+        y_mag = np.abs(y_spec)
+        v_mag = X_mag - y_mag
+        v_mag *= v_mag > y_mag
+
+        outpath = '{}/{}_Vocal.jpg'.format(outdir, mix_basename)
+        v_image = spec_utils.spectrogram_to_image(v_mag)
+        utils.imwrite(outpath, v_image)

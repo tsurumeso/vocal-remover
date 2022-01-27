@@ -60,51 +60,52 @@ def spectrogram_to_image(spec, mode='magnitude'):
     return img
 
 
-def reduce_vocal_aggressively(X, y, softmask):
-    v = X - y
-    y_mag_tmp = np.abs(y)
-    v_mag_tmp = np.abs(v)
+def aggressively_remove_vocal(X, y, weight):
+    X_mag = np.abs(X)
+    y_mag = np.abs(y)
+    # v_mag = np.abs(X_mag - y_mag)
+    v_mag = X_mag - y_mag
+    v_mag *= v_mag > y_mag
 
-    v_mask = v_mag_tmp > y_mag_tmp
-    y_mag = np.clip(y_mag_tmp - v_mag_tmp * v_mask * softmask, 0, np.inf)
+    y_mag = np.clip(y_mag - v_mag * weight, 0, np.inf)
 
     return y_mag * np.exp(1.j * np.angle(y))
 
 
-def mask_silence(mag, ref, thres=0.2, min_range=64, fade_size=32):
+def merge_artifacts(y_mask, thres=0.05, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
-        raise ValueError('min_range must be >= fade_area * 2')
+        raise ValueError('min_range must be >= fade_size * 2')
 
-    mag = mag.copy()
-
-    idx = np.where(ref.mean(axis=(0, 1)) < thres)[0]
-    starts = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
-    ends = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
-    uninformative = np.where(ends - starts > min_range)[0]
-    if len(uninformative) > 0:
-        starts = starts[uninformative]
-        ends = ends[uninformative]
+    idx = np.where(y_mask.min(axis=(0, 1)) > thres)[0]
+    start_idx = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
+    end_idx = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
+    artifact_idx = np.where(end_idx - start_idx > min_range)[0]
+    weight = np.zeros_like(y_mask)
+    if len(artifact_idx) > 0:
+        start_idx = start_idx[artifact_idx]
+        end_idx = end_idx[artifact_idx]
         old_e = None
-        for s, e in zip(starts, ends):
+        for s, e in zip(start_idx, end_idx):
             if old_e is not None and s - old_e < fade_size:
                 s = old_e - fade_size * 2
 
             if s != 0:
-                weight = np.linspace(0, 1, fade_size)
-                mag[:, :, s:s + fade_size] += weight * ref[:, :, s:s + fade_size]
+                weight[:, :, s:s + fade_size] = np.linspace(0, 1, fade_size)
             else:
                 s -= fade_size
 
-            if e != mag.shape[2]:
-                weight = np.linspace(1, 0, fade_size)
-                mag[:, :, e - fade_size:e] += weight * ref[:, :, e - fade_size:e]
+            if e != y_mask.shape[2]:
+                weight[:, :, e - fade_size:e] = np.linspace(1, 0, fade_size)
             else:
                 e += fade_size
 
-            mag[:, :, s + fade_size:e - fade_size] += ref[:, :, s + fade_size:e - fade_size]
+            weight[:, :, s + fade_size:e - fade_size] = 1
             old_e = e
 
-    return mag
+    v_mask = 1 - y_mask
+    y_mask += weight * v_mask
+
+    return y_mask
 
 
 def align_wave_head_and_tail(a, b, sr):
@@ -160,20 +161,22 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
         X = wave_to_spectrogram(X, hop_length, n_fft)
         y = wave_to_spectrogram(y, hop_length, n_fft)
 
-        _, ext = os.path.splitext(mix_path)
         np.save(mix_cache_path, X)
         np.save(inst_cache_path, y)
 
-    return X, y
+    return X, y, mix_cache_path, inst_cache_path
 
 
 def spectrogram_to_wave(spec, hop_length=1024):
-    spec_left = np.asfortranarray(spec[0])
-    spec_right = np.asfortranarray(spec[1])
+    if spec.ndim == 2:
+        wave = librosa.istft(spec, hop_length=hop_length)
+    elif spec.ndim == 3:
+        spec_left = np.asfortranarray(spec[0])
+        spec_right = np.asfortranarray(spec[1])
 
-    wave_left = librosa.istft(spec_left, hop_length=hop_length)
-    wave_right = librosa.istft(spec_right, hop_length=hop_length)
-    wave = np.asfortranarray([wave_left, wave_right])
+        wave_left = librosa.istft(spec_left, hop_length=hop_length)
+        wave_right = librosa.istft(spec_right, hop_length=hop_length)
+        wave = np.asfortranarray([wave_left, wave_right])
 
     return wave
 
@@ -182,26 +185,34 @@ if __name__ == "__main__":
     import cv2
     import sys
 
+    bins = 2048 // 2 + 1
+    freq_to_bin = 2 * bins / 44100
+    unstable_bins = int(200 * freq_to_bin)
+    stable_bins = int(22050 * freq_to_bin)
+    reduction_weight = np.concatenate([
+        np.linspace(0, 1, unstable_bins, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1))
+    ], axis=0) * 0.2
+
     X, _ = librosa.load(
         sys.argv[1], 44100, False, dtype=np.float32, res_type='kaiser_fast')
     y, _ = librosa.load(
         sys.argv[2], 44100, False, dtype=np.float32, res_type='kaiser_fast')
 
     X, y = align_wave_head_and_tail(X, y, 44100)
-
     X_spec = wave_to_spectrogram(X, 1024, 2048)
     y_spec = wave_to_spectrogram(y, 1024, 2048)
 
-    y_spec = reduce_vocal_aggressively(X_spec, y_spec, 0.2)
-    v_spec = X_spec - y_spec
-
-    # v_mask = np.abs(v_spec) > np.abs(y_spec)
-    # y_spec = X_spec - v_spec * v_mask
-    # v_spec = X_spec - y_spec
-
     X_mag = np.abs(X_spec)
     y_mag = np.abs(y_spec)
-    v_mag = np.abs(v_spec)
+    # v_mag = np.abs(X_mag - y_mag)
+    v_mag = X_mag - y_mag
+    v_mag *= v_mag > y_mag
+
+    # y_mag = np.clip(y_mag - v_mag * reduction_weight, 0, np.inf)
+    y_spec = y_mag * np.exp(1j * np.angle(y_spec))
+    v_spec = v_mag * np.exp(1j * np.angle(X_spec))
 
     X_image = spectrogram_to_image(X_mag)
     y_image = spectrogram_to_image(y_mag)

@@ -51,11 +51,9 @@ if __name__ == '__main__':
         y, _ = librosa.load(
             inst_path, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
 
-        X, _ = librosa.effects.trim(X)
-        y, _ = librosa.effects.trim(y)
         X, y = spec_utils.align_wave_head_and_tail(X, y, args.sr)
-
         v = X - y
+
         sf.write(input_i, y.T, args.sr)
         sf.write(input_v, v.T, args.sr)
         subprocess.call(cmd_i, stderr=subprocess.DEVNULL)
@@ -65,12 +63,13 @@ if __name__ == '__main__':
             output_i, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
         v, _ = librosa.load(
             output_v, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
+
         X = y + v
 
-        spec = spec_utils.get_spectrogram(X, args.hop_length, args.n_fft)
+        spec = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
         np.save(mix_cache_path, spec)
 
-        spec = spec_utils.get_spectrogram(y, args.hop_length, args.n_fft)
+        spec = spec_utils.wave_to_spectrogram(y, args.hop_length, args.n_fft)
         np.save(inst_cache_path, spec)
 
         os.remove(input_i)
