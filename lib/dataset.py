@@ -37,6 +37,26 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
         return X_crop, y_crop
 
+    def do_aug(self, X, y):
+        if np.random.uniform() < self.reduction_rate:
+            y = spec_utils.aggressively_remove_vocal(X, y, self.reduction_weight)
+
+        if np.random.uniform() < 0.5:
+            # swap channel
+            X = X[::-1].copy()
+            y = y[::-1].copy()
+
+        if np.random.uniform() < 0.01:
+            # inst
+            X = y.copy()
+
+        # if np.random.uniform() < 0.01:
+        #     # mono
+        #     X[:] = X.mean(axis=0, keepdims=True)
+        #     y[:] = y.mean(axis=0, keepdims=True)
+
+        return X, y
+
     def do_mixup(self, X, y):
         idx = np.random.randint(0, len(self))
         X_path, y_path, coef = self.training_set[idx]
@@ -44,6 +64,8 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         X_i, y_i = self.do_crop(X_path, y_path)
         X_i /= coef
         y_i /= coef
+
+        X_i, y_i = self.do_aug(X_i, y_i)
 
         lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
         X = lam * X + (1 - lam) * X_i
@@ -58,20 +80,7 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         X /= coef
         y /= coef
 
-        if np.random.uniform() < self.reduction_rate:
-            y = spec_utils.aggressively_remove_vocal(X, y, self.reduction_weight)
-
-        if np.random.uniform() < 0.5:
-            # swap channel
-            X = X[::-1].copy()
-            y = y[::-1].copy()
-        if np.random.uniform() < 0.02:
-            # inst
-            X = y.copy()
-        if np.random.uniform() < 0.02:
-            # mono
-            X[:] = X.mean(axis=0, keepdims=True)
-            y[:] = y.mean(axis=0, keepdims=True)
+        X, y = self.do_aug(X, y)
 
         if np.random.uniform() < self.mixup_rate:
             X, y = self.do_mixup(X, y)
@@ -240,8 +249,8 @@ if __name__ == "__main__":
 
         X_mag = np.abs(X_spec)
         y_mag = np.abs(y_spec)
-        # v_mag = np.clip(X_mag - y_mag, 0, np.inf)
-        v_mag = np.abs(X_spec - y_spec)
+        v_mag = X_mag - y_mag
+        v_mag *= v_mag > y_mag
 
         outpath = '{}/{}_Vocal.jpg'.format(outdir, mix_basename)
         v_image = spec_utils.spectrogram_to_image(v_mag)

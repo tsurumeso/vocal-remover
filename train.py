@@ -101,13 +101,13 @@ def main():
     p.add_argument('--lr_decay_factor', type=float, default=0.9)
     p.add_argument('--lr_decay_patience', type=int, default=6)
     p.add_argument('--batchsize', '-B', type=int, default=4)
-    p.add_argument('--accumulation_steps', '-A', type=int, default=4)
-    p.add_argument('--cropsize', '-c', type=int, default=256)
+    p.add_argument('--accumulation_steps', '-A', type=int, default=1)
+    p.add_argument('--cropsize', '-C', type=int, default=256)
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--val_rate', '-v', type=float, default=0.2)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
     p.add_argument('--val_batchsize', '-b', type=int, default=6)
-    p.add_argument('--val_cropsize', '-C', type=int, default=256)
+    p.add_argument('--val_cropsize', '-c', type=int, default=256)
     p.add_argument('--num_workers', '-w', type=int, default=6)
     p.add_argument('--epoch', '-E', type=int, default=200)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
@@ -171,12 +171,12 @@ def main():
 
     bins = args.n_fft // 2 + 1
     freq_to_bin = 2 * bins / args.sr
-    unstable_bins = int(180 * freq_to_bin)
-    stable_bins = int(11025 * freq_to_bin)
+    unstable_bins = int(200 * freq_to_bin)
+    stable_bins = int(22050 * freq_to_bin)
     reduction_weight = np.concatenate([
-        np.logspace(-3, 0, unstable_bins, base=10, dtype=np.float32)[:, None],
-        np.linspace(1, 0.1, stable_bins - unstable_bins, dtype=np.float32)[:, None],
-        np.linspace(0.1, 0, bins - stable_bins, dtype=np.float32)[:, None]
+        np.linspace(0, 1, unstable_bins, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1), dtype=np.float32),
     ], axis=0) * args.reduction_level
 
     training_set = dataset.make_training_set(
