@@ -140,15 +140,15 @@ def main():
         X = np.asarray([X, X])
 
     print('stft of wave source...', end=' ')
-    X = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
+    X_spec = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
 
     sp = Separator(model, device, args.batchsize, args.cropsize, args.postprocess)
 
     if args.tta:
-        y_spec, v_spec = sp.separate_tta(X)
+        y_spec, v_spec = sp.separate_tta(X_spec)
     else:
-        y_spec, v_spec = sp.separate(X)
+        y_spec, v_spec = sp.separate(X_spec)
 
     print('inverse stft of instruments...', end=' ')
     wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
