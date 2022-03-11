@@ -118,6 +118,7 @@ def main():
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
+    p.add_argument('--output', '-O', type=str, default="")
     args = p.parse_args()
 
     print('loading model...', end=' ')
@@ -149,23 +150,34 @@ def main():
         y_spec, v_spec = sp.separate_tta(X_spec)
     else:
         y_spec, v_spec = sp.separate(X_spec)
+    
+    print('validating output directory...', end=' ')
+    output_dir = ""
+    print('{}{}_Instruments.jpg'.format(output_dir, basename))
+    print(args.output)
+    if args.output == "":
+        output_dir = f"./{args.output}/"
+        if not os.path.isdir(output_dir):
+            os.mkdir(output_dir)
+    print(output_dir)
+    print('done')
 
     print('inverse stft of instruments...', end=' ')
     wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
     print('done')
-    sf.write('{}_Instruments.wav'.format(basename), wave.T, sr)
+    sf.write('{}{}_Instruments.wav'.format(output_dir, basename), wave.T, sr)
 
     print('inverse stft of vocals...', end=' ')
     wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
     print('done')
-    sf.write('{}_Vocals.wav'.format(basename), wave.T, sr)
+    sf.write('{}{}_Vocals.wav'.format(output_dir, basename), wave.T, sr)
 
     if args.output_image:
         image = spec_utils.spectrogram_to_image(y_spec)
-        utils.imwrite('{}_Instruments.jpg'.format(basename), image)
+        utils.imwrite('{}{}_Instruments.jpg'.format(output_dir, basename), image)
 
         image = spec_utils.spectrogram_to_image(v_spec)
-        utils.imwrite('{}_Vocals.jpg'.format(basename), image)
+        utils.imwrite('{}{}_Vocals.jpg'.format(output_dir, basename), image)
 
 
 if __name__ == '__main__':
