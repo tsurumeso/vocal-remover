@@ -153,13 +153,10 @@ def main():
     
     print('validating output directory...', end=' ')
     output_dir = ""
-    print('{}{}_Instruments.jpg'.format(output_dir, basename))
-    print(args.output)
-    if args.output == "":
-        output_dir = f"./{args.output}/"
+    if args.output != "": # modifies output_dir if theres an arg specified
+        output_dir = f"./{args.output}/" 
         if not os.path.isdir(output_dir):
-            os.mkdir(output_dir)
-    print(output_dir)
+            os.mkdir(output_dir) # makes output directory if it's not there
     print('done')
 
     print('inverse stft of instruments...', end=' ')
