@@ -118,7 +118,7 @@ def main():
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
-    p.add_argument('--output', '-O', type=str, default="")
+    p.add_argument('--output_dir', '-o', type=str, default="")
     args = p.parse_args()
 
     print('loading model...', end=' ')
@@ -152,11 +152,10 @@ def main():
         y_spec, v_spec = sp.separate(X_spec)
     
     print('validating output directory...', end=' ')
-    output_dir = ""
-    if args.output != "": # modifies output_dir if theres an arg specified
-        output_dir = f"./{args.output}/" 
-        if not os.path.isdir(output_dir):
-            os.mkdir(output_dir) # makes output directory if it's not there
+    output_dir = args.output_dir
+    if output_dir != "": # modifies output_dir if theres an arg specified
+        output_dir = output_dir.rstrip('/') + '/'
+        os.makedirs(output_dir, exist_ok=True)
     print('done')
 
     print('inverse stft of instruments...', end=' ')
