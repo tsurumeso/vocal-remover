@@ -99,7 +99,9 @@ class ASPPModule(nn.Module):
             nn.AdaptiveAvgPool2d((1, None)),
             Conv2DBNActiv(nin, nout, 1, 1, 0, activ=activ)
         )
-        self.conv2 = Conv2DBNActiv(nin, nout, 1, 1, 0, activ=activ)
+        self.conv2 = Conv2DBNActiv(
+            nin, nout, 1, 1, 0, activ=activ
+        )
         self.conv3 = Conv2DBNActiv(
             nin, nout, 3, 1, dilations[0], dilations[0], activ=activ
         )
@@ -109,7 +111,9 @@ class ASPPModule(nn.Module):
         self.conv5 = Conv2DBNActiv(
             nin, nout, 3, 1, dilations[2], dilations[2], activ=activ
         )
-        self.bottleneck = Conv2DBNActiv(nout * 5, nout, 1, 1, 0, activ=activ)
+        self.bottleneck = Conv2DBNActiv(
+            nout * 5, nout, 1, 1, 0, activ=activ
+        )
         self.dropout = nn.Dropout2d(0.1) if dropout else None
 
     def forward(self, x):

@@ -123,7 +123,7 @@ def main():
 
     print('loading model...', end=' ')
     device = torch.device('cpu')
-    model = nets.CascadedNet(args.n_fft)
+    model = nets.CascadedNet(args.n_fft, 32, 128)
     model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
         device = torch.device('cuda:{}'.format(args.gpu))
@@ -150,10 +150,10 @@ def main():
         y_spec, v_spec = sp.separate_tta(X_spec)
     else:
         y_spec, v_spec = sp.separate(X_spec)
-    
+
     print('validating output directory...', end=' ')
     output_dir = args.output_dir
-    if output_dir != "": # modifies output_dir if theres an arg specified
+    if output_dir != "":  # modifies output_dir if theres an arg specified
         output_dir = output_dir.rstrip('/') + '/'
         os.makedirs(output_dir, exist_ok=True)
     print('done')
