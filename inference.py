@@ -129,7 +129,7 @@ def main():
         if torch.cuda.is_available():
             device = torch.device('cuda:{}'.format(args.gpu))
             model.to(device)
-        else if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
             device = torch.device('mps')
             model.to(device)
     print('done')
