@@ -125,9 +125,13 @@ def main():
     device = torch.device('cpu')
     model = nets.CascadedNet(args.n_fft, 32, 128)
     model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
-    if torch.cuda.is_available() and args.gpu >= 0:
-        device = torch.device('cuda:{}'.format(args.gpu))
-        model.to(device)
+    if args.gpu >= 0:
+        if torch.cuda.is_available():
+            device = torch.device('cuda:{}'.format(args.gpu))
+            model.to(device)
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = torch.device('mps')
+            model.to(device)
     print('done')
 
     print('loading wave source...', end=' ')
