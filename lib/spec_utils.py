@@ -27,8 +27,8 @@ def wave_to_spectrogram(wave, hop_length, n_fft):
     wave_left = np.asfortranarray(wave[0])
     wave_right = np.asfortranarray(wave[1])
 
-    spec_left = librosa.stft(wave_left, n_fft, hop_length=hop_length)
-    spec_right = librosa.stft(wave_right, n_fft, hop_length=hop_length)
+    spec_left = librosa.stft(wave_left, n_fft=n_fft, hop_length=hop_length)
+    spec_right = librosa.stft(wave_right, n_fft=n_fft, hop_length=hop_length)
     spec = np.asfortranarray([spec_left, spec_right])
 
     return spec
@@ -152,9 +152,9 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
         y = np.load(inst_cache_path)
     else:
         X, _ = librosa.load(
-            mix_path, sr, False, dtype=np.float32, res_type='kaiser_fast')
+            mix_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
         y, _ = librosa.load(
-            inst_path, sr, False, dtype=np.float32, res_type='kaiser_fast')
+            inst_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
 
         X, y = align_wave_head_and_tail(X, y, sr)
 
@@ -196,9 +196,9 @@ if __name__ == "__main__":
     ], axis=0) * 0.2
 
     X, _ = librosa.load(
-        sys.argv[1], 44100, False, dtype=np.float32, res_type='kaiser_fast')
+        sys.argv[1], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast')
     y, _ = librosa.load(
-        sys.argv[2], 44100, False, dtype=np.float32, res_type='kaiser_fast')
+        sys.argv[2], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast')
 
     X, y = align_wave_head_and_tail(X, y, 44100)
     X_spec = wave_to_spectrogram(X, 1024, 2048)

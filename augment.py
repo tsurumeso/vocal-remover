@@ -47,9 +47,9 @@ if __name__ == '__main__':
             continue
 
         X, _ = librosa.load(
-            mix_path, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
+            mix_path, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
         y, _ = librosa.load(
-            inst_path, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
+            inst_path, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
 
         X, y = spec_utils.align_wave_head_and_tail(X, y, args.sr)
         v = X - y
@@ -60,9 +60,9 @@ if __name__ == '__main__':
         subprocess.call(cmd_v, stderr=subprocess.DEVNULL)
 
         y, _ = librosa.load(
-            output_i, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
+            output_i, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
         v, _ = librosa.load(
-            output_v, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
+            output_v, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
 
         X = y + v
 
