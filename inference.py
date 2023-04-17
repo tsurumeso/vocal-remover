@@ -136,7 +136,7 @@ def main():
 
     print('loading wave source...', end=' ')
     X, sr = librosa.load(
-        args.input, args.sr, False, dtype=np.float32, res_type='kaiser_fast')
+        args.input, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
     basename = os.path.splitext(os.path.basename(args.input))[0]
     print('done')
 
