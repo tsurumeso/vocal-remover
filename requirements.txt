@@ -2,5 +2,5 @@
 # torch>=1.12.0
 # torchvision>=0.6.1
 tqdm>=4.30
-librosa>=0.6.3,<0.9
+librosa>=0.9
 opencv_python>=4.2.0
