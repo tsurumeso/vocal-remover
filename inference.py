@@ -119,6 +119,7 @@ def main():
     p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
     p.add_argument('--output_dir', '-o', type=str, default="")
+    p.add_argument('--skip_instruments', '-s', action='store_true')
     args = p.parse_args()
 
     print('loading model...', end=' ')
@@ -162,10 +163,11 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
     print('done')
 
-    print('inverse stft of instruments...', end=' ')
-    wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
-    print('done')
-    sf.write('{}{}_Instruments.wav'.format(output_dir, basename), wave.T, sr)
+    if not args.skip_instruments:
+        print('inverse stft of instruments...', end=' ')
+        wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
+        print('done')
+        sf.write('{}{}_Instruments.wav'.format(output_dir, basename), wave.T, sr)
 
     print('inverse stft of vocals...', end=' ')
     wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
