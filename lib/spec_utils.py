@@ -24,12 +24,18 @@ def crop_center(h1, h2):
 
 
 def wave_to_spectrogram(wave, hop_length, n_fft):
-    wave_left = np.asfortranarray(wave[0])
-    wave_right = np.asfortranarray(wave[1])
 
-    spec_left = librosa.stft(wave_left, n_fft=n_fft, hop_length=hop_length)
-    spec_right = librosa.stft(wave_right, n_fft=n_fft, hop_length=hop_length)
-    spec = np.asfortranarray([spec_left, spec_right])
+    if wave.ndim == 1:
+        wave_mono = np.asfortranarray(wave)
+        spec_mono = librosa.stft(wave_mono, n_fft=n_fft, hop_length=hop_length)
+        spec = np.asfortranarray([spec_mono, spec_mono])
+    else:
+        wave_left = np.asfortranarray(wave[0])
+        wave_right = np.asfortranarray(wave[1])
+
+        spec_left = librosa.stft(wave_left, n_fft=n_fft, hop_length=hop_length)
+        spec_right = librosa.stft(wave_right, n_fft=n_fft, hop_length=hop_length)
+        spec = np.asfortranarray([spec_left, spec_right])
 
     return spec
 
@@ -167,7 +173,7 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
     return X, y, mix_cache_path, inst_cache_path
 
 
-def spectrogram_to_wave(spec, hop_length=1024):
+def spectrogram_to_wave(spec, hop_length=1024, force_mono=False):
     if spec.ndim == 2:
         wave = librosa.istft(spec, hop_length=hop_length)
     elif spec.ndim == 3:
@@ -176,7 +182,12 @@ def spectrogram_to_wave(spec, hop_length=1024):
 
         wave_left = librosa.istft(spec_left, hop_length=hop_length)
         wave_right = librosa.istft(spec_right, hop_length=hop_length)
-        wave = np.asfortranarray([wave_left, wave_right])
+
+        if force_mono:
+            avg = (wave_left + wave_right) / 2
+            wave = np.asfortranarray(avg)
+        else:
+            wave = np.asfortranarray([wave_left, wave_right])
 
     return wave
 
