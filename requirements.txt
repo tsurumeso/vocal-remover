@@ -4,3 +4,4 @@
 tqdm>=4.30
 librosa>=0.9
 opencv_python>=4.2.0
+resampy>=0.4.2
