@@ -118,8 +118,32 @@ def main():
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
+    p.add_argument('--mono', '-m', action='store_true')
     p.add_argument('--output_dir', '-o', type=str, default="")
+    p.add_argument('--output_instruments', '-M', type=str, default="")
+    p.add_argument('--output_vocals', '-V', type=str, default="")
     args = p.parse_args()
+
+    output_dir = args.output_dir
+    if output_dir != "":  # modifies output_dir if theres an arg specified
+        print('validating output directory...', end=' ')
+        output_dir = output_dir.rstrip('/') + '/'
+        os.makedirs(output_dir, exist_ok=True)
+        output_instruments = '{}{}_Instruments.wav'.format(output_dir, basename)
+        output_vocals = '{}{}_Vocals.wav'.format(output_dir, basename)
+        print('done')        
+    else:
+        output_instruments = output_vocals = ""
+
+    if args.output_instruments != "":
+        output_instruments = args.output_instruments
+
+    if args.output_vocals != "":
+        output_vocals = args.output_vocals
+
+    if output_instruments == "" and output_vocals == "":
+        print('No output defined')
+        return
 
     print('loading model...', end=' ')
     device = torch.device('cpu')
@@ -140,10 +164,6 @@ def main():
     basename = os.path.splitext(os.path.basename(args.input))[0]
     print('done')
 
-    if X.ndim == 1:
-        # mono to stereo
-        X = np.asarray([X, X])
-
     print('stft of wave source...', end=' ')
     X_spec = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
@@ -155,22 +175,21 @@ def main():
     else:
         y_spec, v_spec = sp.separate(X_spec)
 
-    print('validating output directory...', end=' ')
-    output_dir = args.output_dir
-    if output_dir != "":  # modifies output_dir if theres an arg specified
-        output_dir = output_dir.rstrip('/') + '/'
-        os.makedirs(output_dir, exist_ok=True)
-    print('done')
+    force_mono = args.mono
+    if not force_mono:
+        force_mono = X.ndim == 1
 
-    print('inverse stft of instruments...', end=' ')
-    wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
-    print('done')
-    sf.write('{}{}_Instruments.wav'.format(output_dir, basename), wave.T, sr)
+    if output_instruments != "":
+        print('inverse stft of instruments...', end=' ')
+        wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length, force_mono=force_mono)
+        print('done')
+        sf.write(output_instruments, wave.T, sr)
 
-    print('inverse stft of vocals...', end=' ')
-    wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
-    print('done')
-    sf.write('{}{}_Vocals.wav'.format(output_dir, basename), wave.T, sr)
+    if output_vocals != "":
+        print('inverse stft of vocals...', end=' ')
+        wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length, force_mono=force_mono)
+        print('done')
+        sf.write(output_vocals, wave.T, sr)
 
     if args.output_image:
         image = spec_utils.spectrogram_to_image(y_spec)
