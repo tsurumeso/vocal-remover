@@ -37,10 +37,6 @@ def setup_logger(name, logfile='LOGFILENAME.log'):
 
 def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
     model.train()
-    n_fft = model.n_fft
-    hop_length = model.hop_length
-    window = torch.hann_window(n_fft).to(device)
-
     sum_loss = 0
     crit = nn.L1Loss()
 
@@ -48,33 +44,10 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device)
 
-        mask, aux = model(X_batch)
+        pred, aux = model(X_batch)
 
-        pred = X_batch * mask
-        aux = X_batch * aux
-
-        y_mag_batch = torch.abs(y_batch)
-
-        B, C, N, T = X_batch.shape
-        y_wave_batch = y_batch.reshape(-1, N, T)
-        y_wave_batch = torch.istft(y_wave_batch, n_fft, hop_length, window=window)
-        y_wave_batch = y_wave_batch.reshape(B, 2, -1)
-
-        pred_wave = pred.reshape(-1, N, T)
-        pred_wave = torch.istft(pred_wave, n_fft, hop_length, window=window).reshape(B, 2, -1)
-        pred_wave = pred_wave.reshape(B, 2, -1)
-        pred_sdr_inner = (pred_wave * y_wave_batch).sum()
-        pred_sdr_norm = torch.linalg.norm(pred_wave) * torch.linalg.norm(y_wave_batch)
-
-        loss_main = crit(torch.abs(pred), y_mag_batch) - (pred_sdr_inner / pred_sdr_norm) * 1e-2
-
-        aux_wave = aux.reshape(-1, N, T)
-        aux_wave = torch.istft(aux_wave, n_fft, hop_length, window=window).reshape(B, 2, -1)
-        aux_wave = aux_wave.reshape(B, 2, -1)
-        aux_sdr_inner = (aux_wave * y_wave_batch).sum()
-        aux_sdr_norm = torch.linalg.norm(aux_wave) * torch.linalg.norm(y_wave_batch)
-
-        loss_aux = crit(torch.abs(aux), y_mag_batch) - (aux_sdr_inner / aux_sdr_norm) * 1e-2
+        loss_main = crit(pred * X_batch, y_batch)
+        loss_aux = crit(aux * X_batch, y_batch)
 
         loss = loss_main * 0.8 + loss_aux * 0.2
         accum_loss = loss / accumulation_steps
@@ -96,10 +69,6 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
 
 def validate_epoch(dataloader, model, device):
     model.eval()
-    n_fft = model.n_fft
-    hop_length = model.hop_length
-    window = torch.hann_window(n_fft).to(device)
-
     sum_loss = 0
     crit = nn.L1Loss()
 
@@ -111,20 +80,7 @@ def validate_epoch(dataloader, model, device):
             pred = model.predict(X_batch)
 
             y_batch = spec_utils.crop_center(y_batch, pred)
-            y_mag_batch = torch.abs(y_batch)
-
-            B, C, N, T = X_batch.shape
-            y_wave_batch = y_batch.reshape(-1, N, T)
-            y_wave_batch = torch.istft(y_wave_batch, n_fft, hop_length, window=window)
-            y_wave_batch = y_wave_batch.reshape(B, 2, -1)
-
-            pred_wave = pred.reshape(-1, N, T)
-            pred_wave = torch.istft(pred_wave, n_fft, hop_length, window=window).reshape(B, 2, -1)
-            pred_wave = pred_wave.reshape(B, 2, -1)
-            pred_sdr_inner = (pred_wave * y_wave_batch).sum()
-            pred_sdr_norm = torch.linalg.norm(pred_wave) * torch.linalg.norm(y_wave_batch)
-
-            loss = crit(torch.abs(pred), y_mag_batch) - (pred_sdr_inner / pred_sdr_norm) * 1e-2
+            loss = crit(pred, y_batch)
 
             sum_loss += loss.item() * len(X_batch)
 
@@ -150,9 +106,9 @@ def main():
     p.add_argument('--patches', '-p', type=int, default=16)
     p.add_argument('--val_rate', '-v', type=float, default=0.2)
     p.add_argument('--val_filelist', '-V', type=str, default=None)
-    p.add_argument('--val_batchsize', '-b', type=int, default=4)
+    p.add_argument('--val_batchsize', '-b', type=int, default=6)
     p.add_argument('--val_cropsize', '-c', type=int, default=256)
-    p.add_argument('--num_workers', '-w', type=int, default=4)
+    p.add_argument('--num_workers', '-w', type=int, default=6)
     p.add_argument('--epoch', '-E', type=int, default=200)
     p.add_argument('--reduction_rate', '-R', type=float, default=0.0)
     p.add_argument('--reduction_level', '-L', type=float, default=0.2)
@@ -192,7 +148,7 @@ def main():
         logger.info('{} {} {}'.format(i + 1, os.path.basename(X_fname), os.path.basename(y_fname)))
 
     device = torch.device('cpu')
-    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
+    model = nets.CascadedNet(args.n_fft, 32, 128)
     if args.pretrained_model is not None:
         model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
