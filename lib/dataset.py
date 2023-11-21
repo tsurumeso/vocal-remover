@@ -25,33 +25,15 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.training_set)
 
-    def read_npy_shape(self, path):
-        with open(path, 'rb') as fhandle:
-            _, _ = np.lib.format.read_magic(fhandle)
-            shape, _, _ = np.lib.format.read_array_header_1_0(fhandle)
-            return shape
-
-    def read_npy_chunk(self, path, start_row):
-        with open(path, 'rb') as fhandle:
-            _, _ = np.lib.format.read_magic(fhandle)
-            shape, fortran, dtype = np.lib.format.read_array_header_1_0(fhandle)
-
-            assert not fortran, 'Fortran order arrays are not supported'
-
-            row_size = np.prod(shape[1:])
-            start_byte = start_row * row_size * dtype.itemsize
-            fhandle.seek(start_byte, 1)
-            n_items = row_size * self.cropsize
-            flat = np.fromfile(fhandle, count=n_items, dtype=dtype)
-
-            return flat.reshape((-1,) + shape[1:])
-
     def do_crop(self, X_path, y_path):
-        shape = self.read_npy_shape(X_path)
-        start_row = np.random.randint(0, shape[0] - self.cropsize)
+        X_mmap = np.load(X_path, mmap_mode='r')
+        y_mmap = np.load(y_path, mmap_mode='r')
 
-        X_crop = self.read_npy_chunk(X_path, start_row).transpose(1, 2, 0)
-        y_crop = self.read_npy_chunk(y_path, start_row).transpose(1, 2, 0)
+        start = np.random.randint(0, X_mmap.shape[2] - self.cropsize)
+        end = start + self.cropsize
+
+        X_crop = np.array(X_mmap[:, :, start:end], copy=True)
+        y_crop = np.array(y_mmap[:, :, start:end], copy=True)
 
         return X_crop, y_crop
 
@@ -103,7 +85,10 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         if np.random.uniform() < self.mixup_rate:
             X, y = self.do_mixup(X, y)
 
-        return X, y
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
@@ -120,7 +105,10 @@ class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
         X, y = data['X'], data['y']
 
-        return X, y
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag
 
 
 def make_pair(mix_dir, inst_dir):

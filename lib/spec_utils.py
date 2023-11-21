@@ -24,9 +24,12 @@ def crop_center(h1, h2):
 
 
 def wave_to_spectrogram(wave, hop_length, n_fft):
-    spec_left = librosa.stft(wave[0], n_fft=n_fft, hop_length=hop_length)
-    spec_right = librosa.stft(wave[1], n_fft=n_fft, hop_length=hop_length)
-    spec = np.asarray([spec_left, spec_right])
+    wave_left = np.asfortranarray(wave[0])
+    wave_right = np.asfortranarray(wave[1])
+
+    spec_left = librosa.stft(wave_left, n_fft=n_fft, hop_length=hop_length)
+    spec_right = librosa.stft(wave_right, n_fft=n_fft, hop_length=hop_length)
+    spec = np.asfortranarray([spec_left, spec_right])
 
     return spec
 
@@ -145,8 +148,8 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
     inst_cache_path = os.path.join(inst_cache_dir, inst_basename + '.npy')
 
     if os.path.exists(mix_cache_path) and os.path.exists(inst_cache_path):
-        X = np.load(mix_cache_path).transpose(1, 2, 0)
-        y = np.load(inst_cache_path).transpose(1, 2, 0)
+        X = np.load(mix_cache_path)
+        y = np.load(inst_cache_path)
     else:
         X, _ = librosa.load(
             mix_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
@@ -158,10 +161,8 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
         X = wave_to_spectrogram(X, hop_length, n_fft)
         y = wave_to_spectrogram(y, hop_length, n_fft)
 
-        np.save(mix_cache_path, X.transpose(2, 0, 1))
-        np.save(inst_cache_path, y.transpose(2, 0, 1))
-
-    assert X.shape == y.shape
+        np.save(mix_cache_path, X)
+        np.save(inst_cache_path, y)
 
     return X, y, mix_cache_path, inst_cache_path
 
@@ -170,9 +171,12 @@ def spectrogram_to_wave(spec, hop_length=1024):
     if spec.ndim == 2:
         wave = librosa.istft(spec, hop_length=hop_length)
     elif spec.ndim == 3:
-        wave_left = librosa.istft(spec[0], hop_length=hop_length)
-        wave_right = librosa.istft(spec[1], hop_length=hop_length)
-        wave = np.asarray([wave_left, wave_right])
+        spec_left = np.asfortranarray(spec[0])
+        spec_right = np.asfortranarray(spec[1])
+
+        wave_left = librosa.istft(spec_left, hop_length=hop_length)
+        wave_right = librosa.istft(spec_right, hop_length=hop_length)
+        wave = np.asfortranarray([wave_left, wave_right])
 
     return wave
 
@@ -180,6 +184,16 @@ def spectrogram_to_wave(spec, hop_length=1024):
 if __name__ == "__main__":
     import cv2
     import sys
+
+    bins = 2048 // 2 + 1
+    freq_to_bin = 2 * bins / 44100
+    unstable_bins = int(200 * freq_to_bin)
+    stable_bins = int(22050 * freq_to_bin)
+    reduction_weight = np.concatenate([
+        np.linspace(0, 1, unstable_bins, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1))
+    ], axis=0) * 0.2
 
     X, _ = librosa.load(
         sys.argv[1], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast')
@@ -189,11 +203,20 @@ if __name__ == "__main__":
     X, y = align_wave_head_and_tail(X, y, 44100)
     X_spec = wave_to_spectrogram(X, 1024, 2048)
     y_spec = wave_to_spectrogram(y, 1024, 2048)
-    v_spec = X_spec - y_spec
 
-    X_image = spectrogram_to_image(X_spec)
-    y_image = spectrogram_to_image(y_spec)
-    v_image = spectrogram_to_image(v_spec)
+    X_mag = np.abs(X_spec)
+    y_mag = np.abs(y_spec)
+    # v_mag = np.abs(X_mag - y_mag)
+    v_mag = X_mag - y_mag
+    v_mag *= v_mag > y_mag
+
+    # y_mag = np.clip(y_mag - v_mag * reduction_weight, 0, np.inf)
+    y_spec = y_mag * np.exp(1j * np.angle(y_spec))
+    v_spec = v_mag * np.exp(1j * np.angle(X_spec))
+
+    X_image = spectrogram_to_image(X_mag)
+    y_image = spectrogram_to_image(y_mag)
+    v_image = spectrogram_to_image(v_mag)
 
     cv2.imwrite('test_X.jpg', X_image)
     cv2.imwrite('test_y.jpg', y_image)
