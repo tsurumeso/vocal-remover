@@ -46,6 +46,16 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
             return flat.reshape((-1,) + shape[1:])
 
+    def aggressively_remove_vocal(self, X, y):
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+        v_mag = X_mag - y_mag
+        v_mag *= v_mag > y_mag
+
+        y_mag = np.clip(y_mag - v_mag * self.reduction_weight, 0, np.inf)
+
+        return y_mag * np.exp(1.j * np.angle(y))
+
     def do_crop(self, X_path, y_path):
         shape = self.read_npy_shape(X_path)
         start_row = np.random.randint(0, shape[0] - self.cropsize)
@@ -57,7 +67,7 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
     def do_aug(self, X, y):
         if np.random.uniform() < self.reduction_rate:
-            y = spec_utils.aggressively_remove_vocal(X, y, self.reduction_weight)
+            y = self.aggressively_remove_vocal(X, y)
 
         if np.random.uniform() < 0.5:
             # swap channel
@@ -103,7 +113,11 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         if np.random.uniform() < self.mixup_rate:
             X, y = self.do_mixup(X, y)
 
-        return X, y
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag
+        # return X, y
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
@@ -120,7 +134,11 @@ class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
         X, y = data['X'], data['y']
 
-        return X, y
+        X_mag = np.abs(X)
+        y_mag = np.abs(y)
+
+        return X_mag, y_mag
+        # return X, y
 
 
 def make_pair(mix_dir, inst_dir):

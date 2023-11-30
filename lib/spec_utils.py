@@ -57,18 +57,6 @@ def spectrogram_to_image(spec, mode='magnitude'):
     return img
 
 
-def aggressively_remove_vocal(X, y, weight):
-    X_mag = np.abs(X)
-    y_mag = np.abs(y)
-    # v_mag = np.abs(X_mag - y_mag)
-    v_mag = X_mag - y_mag
-    v_mag *= v_mag > y_mag
-
-    y_mag = np.clip(y_mag - v_mag * weight, 0, np.inf)
-
-    return y_mag * np.exp(1.j * np.angle(y))
-
-
 def merge_artifacts(y_mask, thres=0.05, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
         raise ValueError('min_range must be >= fade_size * 2')
@@ -182,13 +170,19 @@ if __name__ == "__main__":
     import sys
 
     X, _ = librosa.load(
-        sys.argv[1], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast')
+        sys.argv[1], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast'
+    )
     y, _ = librosa.load(
-        sys.argv[2], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast')
+        sys.argv[2], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast'
+    )
 
     X, y = align_wave_head_and_tail(X, y, 44100)
     X_spec = wave_to_spectrogram(X, 1024, 2048)
     y_spec = wave_to_spectrogram(y, 1024, 2048)
+
+    # X_spec = np.load(sys.argv[1]).transpose(1, 2, 0)
+    # y_spec = np.load(sys.argv[2]).transpose(1, 2, 0)
+
     v_spec = X_spec - y_spec
 
     X_image = spectrogram_to_image(X_spec)
