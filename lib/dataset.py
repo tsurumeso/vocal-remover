@@ -113,11 +113,7 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         if np.random.uniform() < self.mixup_rate:
             X, y = self.do_mixup(X, y)
 
-        X_mag = np.abs(X)
-        y_mag = np.abs(y)
-
-        return X_mag, y_mag
-        # return X, y
+        return X, y
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
@@ -134,11 +130,7 @@ class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
         X, y = data['X'], data['y']
 
-        X_mag = np.abs(X)
-        y_mag = np.abs(y)
-
-        return X_mag, y_mag
-        # return X, y
+        return X, y
 
 
 def make_pair(mix_dir, inst_dir):

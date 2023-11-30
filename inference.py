@@ -29,13 +29,8 @@ class Separator(object):
             mask_mag = spec_utils.merge_artifacts(mask_mag)
             mask = mask_mag * np.exp(1.j * np.angle(mask))
 
-        X_mag = np.abs(X_spec)
-        X_phase = np.angle(X_spec)
-
-        y_spec = mask * X_mag * np.exp(1.j * X_phase)
-        v_spec = (1 - mask) * X_mag * np.exp(1.j * X_phase)
-        # y_spec = X_spec * mask
-        # v_spec = X_spec - y_spec
+        y_spec = X_spec * mask
+        v_spec = X_spec - y_spec
 
         return y_spec, v_spec
 
@@ -57,7 +52,7 @@ class Separator(object):
                 X_batch = X_dataset[i: i + self.batchsize]
                 X_batch = torch.from_numpy(X_batch).to(self.device)
 
-                mask = self.model.predict_mask(torch.abs(X_batch))
+                mask = self.model.predict_mask(X_batch)
 
                 mask = mask.detach().cpu().numpy()
                 mask = np.concatenate(mask, axis=2)
@@ -125,7 +120,7 @@ def main():
             device = torch.device('cuda:{}'.format(args.gpu))
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
             device = torch.device('mps')
-    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
+    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128, True)
     model.load_state_dict(torch.load(args.pretrained_model, map_location='cpu'))
     model.to(device)
     print('done')

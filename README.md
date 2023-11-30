@@ -38,11 +38,11 @@ python inference.py --input path/to/an/audio/file --gpu 0
 python inference.py --input path/to/an/audio/file --tta --gpu 0
 ```
 
-`--postprocess` option masks instrumental part based on the vocals volume to improve the separation quality.
+<!-- `--postprocess` option masks instrumental part based on the vocals volume to improve the separation quality.
 **Experimental Warning**: If you get any problems with this option, please disable it.
 ```
 python inference.py --input path/to/an/audio/file --postprocess --gpu 0
-```
+``` -->
 
 ## Train your own model
 
@@ -61,7 +61,7 @@ path/to/dataset/
 
 ### Train a model
 ```
-python train.py --dataset path/to/dataset --mixup_rate 0.5 --reduction_rate 0.5 --gpu 0
+python train.py --dataset path/to/dataset --mixup_rate 0.5 --gpu 0
 ```
 
 ## References

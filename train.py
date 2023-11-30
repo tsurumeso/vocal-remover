@@ -67,9 +67,9 @@ def weighted_sdr_loss(y, y_pred, n, n_pred, eps=1e-8):
 
 def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
     model.train()
-    # n_fft = model.n_fft
-    # hop_length = model.hop_length
-    # window = torch.hann_window(n_fft).to(device)
+    n_fft = model.n_fft
+    hop_length = model.hop_length
+    window = torch.hann_window(n_fft).to(device)
 
     sum_loss = 0
     crit_l1 = nn.L1Loss()
@@ -80,13 +80,12 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
 
         mask = model(X_batch)
 
-        # y_pred = X_batch * mask
-        # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
-        # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
+        y_pred = X_batch * mask
+        y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
+        y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-        # loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
-        # loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
-        loss = crit_l1(mask * X_batch, y_batch)
+        loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
+        loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
 
         accum_loss = loss / accumulation_steps
         accum_loss.backward()
@@ -107,9 +106,9 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
 
 def validate_epoch(dataloader, model, device):
     model.eval()
-    # n_fft = model.n_fft
-    # hop_length = model.hop_length
-    # window = torch.hann_window(n_fft).to(device)
+    n_fft = model.n_fft
+    hop_length = model.hop_length
+    window = torch.hann_window(n_fft).to(device)
 
     sum_loss = 0
     crit_l1 = nn.L1Loss()
@@ -122,12 +121,11 @@ def validate_epoch(dataloader, model, device):
             y_pred = model.predict(X_batch)
 
             y_batch = spec_utils.crop_center(y_batch, y_pred)
-            # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
-            # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
+            y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
+            y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-            # loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
-            # loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
-            loss = crit_l1(y_pred, y_batch)
+            loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
+            loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
 
             sum_loss += loss.item() * len(X_batch)
 
@@ -205,7 +203,7 @@ def main():
     ], axis=0) * args.reduction_level
 
     device = torch.device('cpu')
-    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
+    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128, True)
     if args.pretrained_model is not None:
         model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
