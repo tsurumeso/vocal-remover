@@ -43,40 +43,46 @@ class BaseNet(nn.Module):
 
 class CascadedNet(nn.Module):
 
-    def __init__(self, n_fft, hop_length, nout=32, nout_lstm=128):
+    def __init__(self, n_fft, hop_length, nout=32, nout_lstm=128, is_complex=False):
         super(CascadedNet, self).__init__()
         self.n_fft = n_fft
         self.hop_length = hop_length
+        self.is_complex = is_complex
+
         self.max_bin = n_fft // 2
         self.output_bin = n_fft // 2 + 1
         self.nin_lstm = self.max_bin // 2
         self.offset = 64
 
+        nin = 4 if is_complex else 2
+
         self.stg1_low_band_net = nn.Sequential(
-            BaseNet(4, nout // 2, self.nin_lstm // 2, nout_lstm),
+            BaseNet(nin, nout // 2, self.nin_lstm // 2, nout_lstm),
             layers.Conv2DBNActiv(nout // 2, nout // 4, 1, 1, 0)
         )
         self.stg1_high_band_net = BaseNet(
-            4, nout // 4, self.nin_lstm // 2, nout_lstm // 2
+            nin, nout // 4, self.nin_lstm // 2, nout_lstm // 2
         )
 
         self.stg2_low_band_net = nn.Sequential(
-            BaseNet(nout // 4 + 4, nout, self.nin_lstm // 2, nout_lstm),
+            BaseNet(nout // 4 + nin, nout, self.nin_lstm // 2, nout_lstm),
             layers.Conv2DBNActiv(nout, nout // 2, 1, 1, 0)
         )
         self.stg2_high_band_net = BaseNet(
-            nout // 4 + 4, nout // 2, self.nin_lstm // 2, nout_lstm // 2
+            nout // 4 + nin, nout // 2, self.nin_lstm // 2, nout_lstm // 2
         )
 
         self.stg3_full_band_net = BaseNet(
-            3 * nout // 4 + 4, nout, self.nin_lstm, nout_lstm
+            3 * nout // 4 + nin, nout, self.nin_lstm, nout_lstm
         )
 
-        self.out = nn.Conv2d(nout, 4, 1, bias=False)
-        self.aux_out = nn.Conv2d(3 * nout // 4, 4, 1, bias=False)
+        self.out = nn.Conv2d(nout, nin, 1, bias=False)
+        self.aux_out = nn.Conv2d(3 * nout // 4, nin, 1, bias=False)
 
     def forward(self, x):
-        x = torch.cat([x.real, x.imag], dim=1)
+        if self.is_complex:
+            x = torch.cat([x.real, x.imag], dim=1)
+
         x = x[:, :, :self.max_bin]
 
         bandw = x.size()[2] // 2
@@ -95,26 +101,25 @@ class CascadedNet(nn.Module):
         f3_in = torch.cat([x, aux1, aux2], dim=1)
         f3 = self.stg3_full_band_net(f3_in)
 
-        mask = torch.tanh(self.out(f3))
-        mask = torch.complex(mask[:, :2], mask[:, 2:])
+        if self.is_complex:
+            mask = self.out(f3)
+            mask = torch.complex(mask[:, :2], mask[:, 2:])
+            mask = self.bounded_mask(mask)
+        else:
+            mask = torch.sigmoid(self.out(f3))
+
         mask = F.pad(
             input=mask,
             pad=(0, 0, 0, self.output_bin - mask.size()[2]),
             mode='replicate'
         )
 
-        if self.training:
-            aux = torch.cat([aux1, aux2], dim=1)
-            aux = torch.tanh(self.aux_out(aux))
-            aux = torch.complex(aux[:, :2], aux[:, 2:])
-            aux = F.pad(
-                input=aux,
-                pad=(0, 0, 0, self.output_bin - aux.size()[2]),
-                mode='replicate'
-            )
-            return mask, aux
-        else:
-            return mask
+        return mask
+
+    def bounded_mask(self, mask, eps=1e-8):
+        mask_mag = torch.abs(mask)
+        mask = torch.tanh(mask_mag) * mask / (mask_mag + eps)
+        return mask
 
     def predict_mask(self, x):
         mask = self.forward(x)

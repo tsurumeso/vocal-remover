@@ -15,7 +15,7 @@ from lib import utils
 
 class Separator(object):
 
-    def __init__(self, model, device, batchsize, cropsize, postprocess=False):
+    def __init__(self, model, device=None, batchsize=1, cropsize=256, postprocess=False):
         self.model = model
         self.offset = model.offset
         self.device = device
@@ -27,7 +27,7 @@ class Separator(object):
         if self.postprocess:
             mask_mag = np.abs(mask)
             mask_mag = spec_utils.merge_artifacts(mask_mag)
-            mask = mask_mag + 1.j * np.exp(np.angle(mask))
+            mask = mask_mag * np.exp(1.j * np.angle(mask))
 
         y_spec = X_spec * mask
         v_spec = X_spec - y_spec
@@ -109,26 +109,26 @@ def main():
     p.add_argument('--cropsize', '-c', type=int, default=256)
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
-    # p.add_argument('--postprocess', '-p', action='store_true')
+    p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--output_dir', '-o', type=str, default="")
     args = p.parse_args()
 
     print('loading model...', end=' ')
     device = torch.device('cpu')
-    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
-    model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if args.gpu >= 0:
         if torch.cuda.is_available():
             device = torch.device('cuda:{}'.format(args.gpu))
-            model.to(device)
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
             device = torch.device('mps')
-            model.to(device)
+    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128, True)
+    model.load_state_dict(torch.load(args.pretrained_model, map_location='cpu'))
+    model.to(device)
     print('done')
 
     print('loading wave source...', end=' ')
     X, sr = librosa.load(
-        args.input, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
+        args.input, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast'
+    )
     basename = os.path.splitext(os.path.basename(args.input))[0]
     print('done')
 
@@ -140,7 +140,13 @@ def main():
     X_spec = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
     print('done')
 
-    sp = Separator(model, device, args.batchsize, args.cropsize)
+    sp = Separator(
+        model=model,
+        device=device,
+        batchsize=args.batchsize,
+        cropsize=args.cropsize,
+        postprocess=args.postprocess
+    )
 
     if args.tta:
         y_spec, v_spec = sp.separate_tta(X_spec)
