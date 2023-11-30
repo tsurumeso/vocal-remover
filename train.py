@@ -22,8 +22,7 @@ def setup_logger(name, logfile='LOGFILENAME.log'):
 
     fh = logging.FileHandler(logfile, encoding='utf8')
     fh.setLevel(logging.DEBUG)
-    fh_formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s')
+    fh_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     fh.setFormatter(fh_formatter)
 
     sh = logging.StreamHandler()
@@ -35,48 +34,60 @@ def setup_logger(name, logfile='LOGFILENAME.log'):
     return logger
 
 
+def to_wave(spec, n_fft, hop_length, window):
+    B, _, N, T = spec.shape
+    wave = spec.reshape(-1, N, T)
+    wave = torch.istft(wave, n_fft, hop_length, window=window)
+    wave = wave.reshape(B, 2, -1)
+
+    return wave
+
+
+def sdr_loss(y, y_pred, eps=1e-8):
+    sdr = (y * y_pred).sum()
+    sdr /= torch.linalg.norm(y) * torch.linalg.norm(y_pred) + eps
+
+    return -sdr
+
+
+def weighted_sdr_loss(y, y_pred, n, n_pred, eps=1e-8):
+    y_sdr = (y * y_pred).sum()
+    y_sdr /= torch.linalg.norm(y) * torch.linalg.norm(y_pred) + eps
+
+    noise_sdr = (n * n_pred).sum()
+    noise_sdr /= torch.linalg.norm(n) * torch.linalg.norm(n_pred) + eps
+
+    a = torch.sum(y ** 2)
+    a /= torch.sum(y ** 2) + torch.sum(n ** 2) + eps
+
+    loss = a * y_sdr + (1 - a) * noise_sdr
+
+    return -loss
+
+
 def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
     model.train()
-    n_fft = model.n_fft
-    hop_length = model.hop_length
-    window = torch.hann_window(n_fft).to(device)
+    # n_fft = model.n_fft
+    # hop_length = model.hop_length
+    # window = torch.hann_window(n_fft).to(device)
 
     sum_loss = 0
-    crit = nn.L1Loss()
+    crit_l1 = nn.L1Loss()
 
     for itr, (X_batch, y_batch) in enumerate(dataloader):
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device)
 
-        mask, aux = model(X_batch)
+        mask = model(X_batch)
 
-        pred = X_batch * mask
-        aux = X_batch * aux
+        # y_pred = X_batch * mask
+        # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
+        # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-        y_mag_batch = torch.abs(y_batch)
+        # loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
+        # loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
+        loss = crit_l1(mask * X_batch, y_batch)
 
-        B, C, N, T = X_batch.shape
-        y_wave_batch = y_batch.reshape(-1, N, T)
-        y_wave_batch = torch.istft(y_wave_batch, n_fft, hop_length, window=window)
-        y_wave_batch = y_wave_batch.reshape(B, 2, -1)
-
-        pred_wave = pred.reshape(-1, N, T)
-        pred_wave = torch.istft(pred_wave, n_fft, hop_length, window=window).reshape(B, 2, -1)
-        pred_wave = pred_wave.reshape(B, 2, -1)
-        pred_sdr_inner = (pred_wave * y_wave_batch).sum()
-        pred_sdr_norm = torch.linalg.norm(pred_wave) * torch.linalg.norm(y_wave_batch)
-
-        loss_main = crit(torch.abs(pred), y_mag_batch) - (pred_sdr_inner / pred_sdr_norm) * 1e-2
-
-        aux_wave = aux.reshape(-1, N, T)
-        aux_wave = torch.istft(aux_wave, n_fft, hop_length, window=window).reshape(B, 2, -1)
-        aux_wave = aux_wave.reshape(B, 2, -1)
-        aux_sdr_inner = (aux_wave * y_wave_batch).sum()
-        aux_sdr_norm = torch.linalg.norm(aux_wave) * torch.linalg.norm(y_wave_batch)
-
-        loss_aux = crit(torch.abs(aux), y_mag_batch) - (aux_sdr_inner / aux_sdr_norm) * 1e-2
-
-        loss = loss_main * 0.8 + loss_aux * 0.2
         accum_loss = loss / accumulation_steps
         accum_loss.backward()
 
@@ -96,35 +107,27 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
 
 def validate_epoch(dataloader, model, device):
     model.eval()
-    n_fft = model.n_fft
-    hop_length = model.hop_length
-    window = torch.hann_window(n_fft).to(device)
+    # n_fft = model.n_fft
+    # hop_length = model.hop_length
+    # window = torch.hann_window(n_fft).to(device)
 
     sum_loss = 0
-    crit = nn.L1Loss()
+    crit_l1 = nn.L1Loss()
 
     with torch.no_grad():
         for X_batch, y_batch in dataloader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device)
 
-            pred = model.predict(X_batch)
+            y_pred = model.predict(X_batch)
 
-            y_batch = spec_utils.crop_center(y_batch, pred)
-            y_mag_batch = torch.abs(y_batch)
+            y_batch = spec_utils.crop_center(y_batch, y_pred)
+            # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
+            # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-            B, C, N, T = X_batch.shape
-            y_wave_batch = y_batch.reshape(-1, N, T)
-            y_wave_batch = torch.istft(y_wave_batch, n_fft, hop_length, window=window)
-            y_wave_batch = y_wave_batch.reshape(B, 2, -1)
-
-            pred_wave = pred.reshape(-1, N, T)
-            pred_wave = torch.istft(pred_wave, n_fft, hop_length, window=window).reshape(B, 2, -1)
-            pred_wave = pred_wave.reshape(B, 2, -1)
-            pred_sdr_inner = (pred_wave * y_wave_batch).sum()
-            pred_sdr_norm = torch.linalg.norm(pred_wave) * torch.linalg.norm(y_wave_batch)
-
-            loss = crit(torch.abs(pred), y_mag_batch) - (pred_sdr_inner / pred_sdr_norm) * 1e-2
+            # loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
+            # loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
+            loss = crit_l1(y_pred, y_batch)
 
             sum_loss += loss.item() * len(X_batch)
 
@@ -191,6 +194,16 @@ def main():
     for i, (X_fname, y_fname) in enumerate(val_filelist):
         logger.info('{} {} {}'.format(i + 1, os.path.basename(X_fname), os.path.basename(y_fname)))
 
+    bins = args.n_fft // 2 + 1
+    freq_to_bin = 2 * bins / args.sr
+    unstable_bins = int(200 * freq_to_bin)
+    stable_bins = int(22050 * freq_to_bin)
+    reduction_weight = np.concatenate([
+        np.linspace(0, 1, unstable_bins, dtype=np.float32)[:, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1), dtype=np.float32),
+    ], axis=0) * args.reduction_level
+
     device = torch.device('cpu')
     model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
     if args.pretrained_model is not None:
@@ -212,16 +225,6 @@ def main():
         min_lr=args.lr_min,
         verbose=True
     )
-
-    bins = args.n_fft // 2 + 1
-    freq_to_bin = 2 * bins / args.sr
-    unstable_bins = int(200 * freq_to_bin)
-    stable_bins = int(22050 * freq_to_bin)
-    reduction_weight = np.concatenate([
-        np.linspace(0, 1, unstable_bins, dtype=np.float32)[:, None],
-        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
-        np.zeros((bins - stable_bins, 1), dtype=np.float32),
-    ], axis=0) * args.reduction_level
 
     training_set = dataset.make_training_set(
         filelist=train_filelist,
