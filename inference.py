@@ -109,7 +109,7 @@ def main():
     p.add_argument('--cropsize', '-c', type=int, default=256)
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
-    p.add_argument('--postprocess', '-p', action='store_true')
+    # p.add_argument('--postprocess', '-p', action='store_true')
     p.add_argument('--output_dir', '-o', type=str, default="")
     args = p.parse_args()
 
@@ -145,7 +145,7 @@ def main():
         device=device,
         batchsize=args.batchsize,
         cropsize=args.cropsize,
-        postprocess=args.postprocess
+        # postprocess=args.postprocess
     )
 
     if args.tta:
