@@ -181,7 +181,7 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[]):
         filelist = make_pair(
             os.path.join(dataset_dir, 'mixtures'),
             os.path.join(dataset_dir, 'instruments'),
-            os.path.join(dataset_dir, 'vocals')
+            os.path.join(dataset_dir, 'pseudo_vocals')
         )
 
         random.shuffle(filelist)
@@ -202,13 +202,13 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[]):
         train_filelist = make_pair(
             os.path.join(dataset_dir, 'training/mixtures'),
             os.path.join(dataset_dir, 'training/instruments'),
-            os.path.join(dataset_dir, 'training/vocals')
+            os.path.join(dataset_dir, 'training/pseudo_vocals')
         )
 
         val_filelist = make_pair(
             os.path.join(dataset_dir, 'validation/mixtures'),
             os.path.join(dataset_dir, 'validation/instruments'),
-            os.path.join(dataset_dir, 'validation/vocals')
+            os.path.join(dataset_dir, 'validation/pseudo_vocals')
         )
 
     return train_filelist, val_filelist
