@@ -176,12 +176,12 @@ def make_pair(X_dir, y_dir, v_dir=None):
     return filelist
 
 
-def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[], vocals=True):
+def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[]):
     if split_mode == 'random':
         filelist = make_pair(
             os.path.join(dataset_dir, 'mixtures'),
             os.path.join(dataset_dir, 'instruments'),
-            os.path.join(dataset_dir, 'vocals') if vocals else None
+            os.path.join(dataset_dir, 'vocals')
         )
 
         random.shuffle(filelist)
@@ -198,20 +198,40 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[], vocals=T
     elif split_mode == 'subdirs':
         if len(val_filelist) != 0:
             raise ValueError('`val_filelist` option is not available with `subdirs` mode')
-        
+
         train_filelist = make_pair(
             os.path.join(dataset_dir, 'training/mixtures'),
             os.path.join(dataset_dir, 'training/instruments'),
-            os.path.join(dataset_dir, 'training/vocals') if vocals else None
+            os.path.join(dataset_dir, 'training/vocals')
         )
 
         val_filelist = make_pair(
             os.path.join(dataset_dir, 'validation/mixtures'),
             os.path.join(dataset_dir, 'validation/instruments'),
-            os.path.join(dataset_dir, 'validation/vocals') if vocals else None
+            os.path.join(dataset_dir, 'validation/vocals')
         )
 
     return train_filelist, val_filelist
+
+
+def raw_data_split(dataset_dir, split_mode):
+    if split_mode == 'random':
+        filelist = make_pair(
+            os.path.join(dataset_dir, 'mixtures'),
+            os.path.join(dataset_dir, 'instruments'),
+        )
+    elif split_mode == 'subdirs':
+        train_filelist = make_pair(
+            os.path.join(dataset_dir, 'training/mixtures'),
+            os.path.join(dataset_dir, 'training/instruments'),
+        )
+        val_filelist = make_pair(
+            os.path.join(dataset_dir, 'validation/mixtures'),
+            os.path.join(dataset_dir, 'validation/instruments'),
+        )
+        filelist = train_filelist + val_filelist
+
+    return filelist
 
 
 def make_padding(width, cropsize, offset):
