@@ -76,8 +76,8 @@ class CascadedNet(nn.Module):
             3 * nout // 4 + nin, nout, self.nin_lstm, nout_lstm
         )
 
-        self.out = nn.Conv2d(nout, nin, 1, bias=False)
-        self.aux_out = nn.Conv2d(3 * nout // 4, nin, 1, bias=False)
+        self.out_y = nn.Conv2d(nout, nin, 1, bias=False)
+        self.out_v = nn.Conv2d(nout, nin, 1, bias=False)
 
     def forward(self, x):
         if self.is_complex:
@@ -102,19 +102,28 @@ class CascadedNet(nn.Module):
         f3 = self.stg3_full_band_net(f3_in)
 
         if self.is_complex:
-            mask = self.out(f3)
-            mask = torch.complex(mask[:, :2], mask[:, 2:])
-            mask = self.bounded_mask(mask)
+            mask_y = self.out_y(f3)
+            mask_y = torch.complex(mask_y[:, :2], mask_y[:, 2:])
+            mask_y = self.bounded_mask(mask_y)
+            mask_v = self.out_v(f3)
+            mask_v = torch.complex(mask_v[:, :2], mask_v[:, 2:])
+            mask_v = self.bounded_mask(mask_v)
         else:
-            mask = torch.sigmoid(self.out(f3))
+            mask_y = torch.sigmoid(self.out_y(f3))
+            mask_v = torch.sigmoid(self.out_v(f3))
 
-        mask = F.pad(
-            input=mask,
-            pad=(0, 0, 0, self.output_bin - mask.size()[2]),
+        mask_y = F.pad(
+            input=mask_y,
+            pad=(0, 0, 0, self.output_bin - mask_y.size()[2]),
+            mode='replicate'
+        )
+        mask_v = F.pad(
+            input=mask_v,
+            pad=(0, 0, 0, self.output_bin - mask_v.size()[2]),
             mode='replicate'
         )
 
-        return mask
+        return mask_y, mask_v
 
     def bounded_mask(self, mask, eps=1e-8):
         mask_mag = torch.abs(mask)
@@ -122,20 +131,23 @@ class CascadedNet(nn.Module):
         return mask
 
     def predict_mask(self, x):
-        mask = self.forward(x)
+        mask_y, mask_v = self.forward(x)
 
         if self.offset > 0:
-            mask = mask[:, :, :, self.offset:-self.offset]
-            assert mask.size()[3] > 0
+            mask_y = mask_y[:, :, :, self.offset:-self.offset]
+            mask_v = mask_v[:, :, :, self.offset:-self.offset]
+            assert mask_y.size()[3] > 0 and mask_v.size()[3] > 0
 
-        return mask
+        return mask_y, mask_v
 
     def predict(self, x):
-        mask = self.forward(x)
-        pred = x * mask
+        mask_y, mask_v = self.forward(x)
+        pred_y = x * mask_y
+        pred_v = x * mask_v
 
         if self.offset > 0:
-            pred = pred[:, :, :, self.offset:-self.offset]
-            assert pred.size()[3] > 0
+            pred_y = pred_y[:, :, :, self.offset:-self.offset]
+            pred_v = pred_v[:, :, :, self.offset:-self.offset]
+            assert pred_y.size()[3] > 0 and pred_v.size()[3] > 0
 
-        return pred
+        return pred_y, pred_v
