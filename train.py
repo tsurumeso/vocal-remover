@@ -71,22 +71,33 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
     # hop_length = model.hop_length
     # window = torch.hann_window(n_fft).to(device)
 
-    sum_loss = 0
+    sum_loss_y = sum_loss_v = 0
     crit_l1 = nn.L1Loss()
 
-    for itr, (X_batch, y_batch) in enumerate(dataloader):
+    for itr, (X_batch, y_batch, v_batch) in enumerate(dataloader):
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device)
+        v_batch = v_batch.to(device)
 
-        mask = model(X_batch)
+        mask_y, mask_v = model(X_batch)
 
-        # y_pred = X_batch * mask
+        # y_pred = X_batch * mask_y
         # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
         # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-        # loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
-        # loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
-        loss = crit_l1(mask * X_batch, y_batch)
+        # v_pred = X_batch * mask_v
+        # v_wave_batch = to_wave(v_batch, n_fft, hop_length, window)
+        # v_wave_pred = to_wave(v_pred, n_fft, hop_length, window)
+
+        loss_y = crit_l1(mask_y * X_batch, y_batch)
+        loss_v = crit_l1(mask_v * X_batch, v_batch)
+
+        # loss_y = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
+        # loss_y += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
+        # loss_v = crit_l1(torch.abs(v_batch), torch.abs(v_pred))
+        # loss_v += sdr_loss(v_wave_batch, v_wave_pred) * 0.01
+
+        loss = loss_y + loss_v
 
         accum_loss = loss / accumulation_steps
         accum_loss.backward()
@@ -95,14 +106,18 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
             optimizer.step()
             model.zero_grad()
 
-        sum_loss += loss.item() * len(X_batch)
+        sum_loss_y += loss_y.item() * len(X_batch)
+        sum_loss_v += loss_v.item() * len(X_batch)
 
     # the rest batch
     if (itr + 1) % accumulation_steps != 0:
         optimizer.step()
         model.zero_grad()
 
-    return sum_loss / len(dataloader.dataset)
+    avg_loss_y = sum_loss_y / len(dataloader.dataset)
+    avg_loss_v = sum_loss_v / len(dataloader.dataset)
+
+    return avg_loss_y, avg_loss_v
 
 
 def validate_epoch(dataloader, model, device):
@@ -111,27 +126,39 @@ def validate_epoch(dataloader, model, device):
     # hop_length = model.hop_length
     # window = torch.hann_window(n_fft).to(device)
 
-    sum_loss = 0
+    sum_loss_y = sum_loss_v = 0
     crit_l1 = nn.L1Loss()
 
     with torch.no_grad():
-        for X_batch, y_batch in dataloader:
+        for X_batch, y_batch, v_batch in dataloader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device)
+            v_batch = v_batch.to(device)
 
-            y_pred = model.predict(X_batch)
+            y_pred, v_pred = model.predict(X_batch)
 
             y_batch = spec_utils.crop_center(y_batch, y_pred)
+            v_batch = spec_utils.crop_center(v_batch, y_pred)
             # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
             # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
+            # v_wave_batch = to_wave(v_batch, n_fft, hop_length, window)
+            # v_wave_pred = to_wave(v_pred, n_fft, hop_length, window)
 
-            # loss = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
-            # loss += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
-            loss = crit_l1(y_pred, y_batch)
+            loss_y = crit_l1(y_pred, y_batch)
+            loss_v = crit_l1(v_pred, v_batch)
 
-            sum_loss += loss.item() * len(X_batch)
+            # loss_y = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
+            # loss_y += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
+            # loss_v = crit_l1(torch.abs(v_batch), torch.abs(v_pred))
+            # loss_v += sdr_loss(v_wave_batch, v_wave_pred) * 0.01
 
-    return sum_loss / len(dataloader.dataset)
+            sum_loss_y += loss_y.item() * len(X_batch)
+            sum_loss_v += loss_v.item() * len(X_batch)
+
+    avg_loss_y = sum_loss_y / len(dataloader.dataset)
+    avg_loss_v = sum_loss_v / len(dataloader.dataset)
+
+    return avg_loss_y, avg_loss_v
 
 
 def main():
@@ -191,7 +218,7 @@ def main():
         with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
             json.dump(val_filelist, f, ensure_ascii=False)
 
-    for i, (X_fname, y_fname) in enumerate(val_filelist):
+    for i, (X_fname, y_fname, _) in enumerate(val_filelist):
         logger.info('{} {} {}'.format(i + 1, os.path.basename(X_fname), os.path.basename(y_fname)))
 
     bins = args.n_fft // 2 + 1
@@ -223,7 +250,6 @@ def main():
         patience=args.lr_decay_patience,
         threshold=1e-6,
         min_lr=args.lr_min,
-        verbose=True
     )
 
     training_set = dataset.make_training_set(
@@ -273,14 +299,16 @@ def main():
     best_loss = np.inf
     for epoch in range(args.epoch):
         logger.info('# epoch {}'.format(epoch))
-        train_loss = train_epoch(train_dataloader, model, device, optimizer, args.accumulation_steps)
-        val_loss = validate_epoch(val_dataloader, model, device)
+        train_loss_y, train_loss_v = train_epoch(train_dataloader, model, device, optimizer, args.accumulation_steps)
+        val_loss_y, val_loss_v = validate_epoch(val_dataloader, model, device)
 
         logger.info(
-            '  * training loss = {:.6f}, validation loss = {:.6f}'
-            .format(train_loss, val_loss)
+            '  * training loss (y, v) = ({:.6f}, {:.6f}), validation loss (y, v) = ({:.6f}, {:.6f})'
+            .format(train_loss_y, train_loss_v, val_loss_y, val_loss_v)
         )
 
+        train_loss = train_loss_y + train_loss_v
+        val_loss = val_loss_y + val_loss_v
         scheduler.step(val_loss)
 
         if val_loss < best_loss:
