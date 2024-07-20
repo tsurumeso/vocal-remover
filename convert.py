@@ -35,18 +35,19 @@ def main():
         model.to(device)
     print('done')
 
-    cache_dir = 'sr{}_hl{}_nf{}'.format(args.sr, args.hop_length, args.n_fft)
-    filelist = dataset.raw_data_split(
+    train_filelist, val_filelist = dataset.train_val_split(
         dataset_dir=args.dataset,
-        split_mode=args.split_mode
+        split_mode=args.split_mode,
+        val_rate=0,
+        vocals=False
     )
+
+    filelist = train_filelist + val_filelist
+    cache_dir = 'sr{}_hl{}_nf{}'.format(args.sr, args.hop_length, args.n_fft)
 
     for mix_path, inst_path in filelist:
         X_basename = os.path.splitext(os.path.basename(mix_path))[0]
         y_basename = os.path.splitext(os.path.basename(inst_path))[0]
-        v_basename = X_basename + '_Vocals'
-        # p_basename = X_basename + '_PseudoInstruments'
-
         print('converting {}...'.format(X_basename))
 
         X_cache_dir = os.path.join(os.path.dirname(mix_path), cache_dir)
@@ -72,20 +73,19 @@ def main():
         y = spec_utils.wave_to_spectrogram(y, args.hop_length, args.n_fft)
 
         sp = inference.Separator(model, device, args.batchsize, args.cropsize)
-        _, v = sp.separate_tta(X - y)
-        # a, v = sp.separate_tta(X - y)
+        _, v_spec = sp.separate_tta(X - y)
+        # a_spec, _ = sp.separate_tta(X - y)
 
-        # p = y + a
-
-        # wave = spec_utils.spectrogram_to_wave(p, hop_length=args.hop_length)
-        # sf.write('{}/{}.wav'.format(v_dir, p_basename), [0], sr)
-        # wave = spec_utils.spectrogram_to_wave(v, hop_length=args.hop_length)
-        sf.write('{}/{}.wav'.format(v_dir, v_basename), [0], sr)
+        # print('inverse stft of pseudo instruments...', end=' ')
+        # pseudo_inst = y + a_spec
+        # print('done')
 
         np.save('{}/{}.npy'.format(X_cache_dir, X_basename), X.transpose(2, 0, 1))
         np.save('{}/{}.npy'.format(y_cache_dir, y_basename), y.transpose(2, 0, 1))
-        # np.save('{}/{}.npy'.format(y_cache_dir, p_basename), p.transpose(2, 0, 1))
-        np.save('{}/{}.npy'.format(v_cache_dir, v_basename), v.transpose(2, 0, 1))
+
+        wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
+        sf.write('{}/{}_Vocals.wav'.format(v_dir, X_basename), wave.T, sr)
+        np.save('{}/{}_Vocals.npy'.format(v_cache_dir, X_basename), v_spec.transpose(2, 0, 1))
 
 
 if __name__ == '__main__':
