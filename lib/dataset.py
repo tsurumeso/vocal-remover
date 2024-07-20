@@ -56,17 +56,16 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
         return y_mag * np.exp(1.j * np.angle(y))
 
-    def do_crop(self, X_path, y_path, v_path):
+    def do_crop(self, X_path, y_path):
         shape = self.read_npy_shape(X_path)
         start_row = np.random.randint(0, shape[0] - self.cropsize)
 
         X_crop = self.read_npy_chunk(X_path, start_row).transpose(1, 2, 0)
         y_crop = self.read_npy_chunk(y_path, start_row).transpose(1, 2, 0)
-        v_crop = self.read_npy_chunk(v_path, start_row).transpose(1, 2, 0)
 
-        return X_crop, y_crop, v_crop
+        return X_crop, y_crop
 
-    def do_aug(self, X, y, v):
+    def do_aug(self, X, y):
         if np.random.uniform() < self.reduction_rate:
             y = self.aggressively_remove_vocal(X, y)
 
@@ -74,57 +73,51 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
             # swap channel
             X = X[::-1].copy()
             y = y[::-1].copy()
-            v = v[::-1].copy()
 
         if np.random.uniform() < 0.01:
             # inst
             X = y.copy()
-            v = np.zeros_like(X)
 
         # if np.random.uniform() < 0.01:
         #     # mono
         #     X[:] = X.mean(axis=0, keepdims=True)
         #     y[:] = y.mean(axis=0, keepdims=True)
 
-        return X, y, v
+        return X, y
 
-    def do_mixup(self, X, y, v):
+    def do_mixup(self, X, y):
         idx = np.random.randint(0, len(self))
-        X_path, y_path, v_path, coef = self.training_set[idx]
+        X_path, y_path, coef = self.training_set[idx]
 
-        X_i, y_i, v_i = self.do_crop(X_path, y_path, v_path)
+        X_i, y_i = self.do_crop(X_path, y_path)
         X_i /= coef
         y_i /= coef
-        v_i /= coef
 
-        X_i, y_i, v_i = self.do_aug(X_i, y_i, v_i)
+        X_i, y_i = self.do_aug(X_i, y_i)
 
         lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
         X = lam * X + (1 - lam) * X_i
         y = lam * y + (1 - lam) * y_i
-        v = lam * v + (1 - lam) * v_i
 
-        return X, y, v
+        return X, y
 
     def __getitem__(self, idx):
-        X_path, y_path, v_path, coef = self.training_set[idx]
+        X_path, y_path, coef = self.training_set[idx]
 
-        X, y, v = self.do_crop(X_path, y_path, v_path)
+        X, y = self.do_crop(X_path, y_path)
         X /= coef
         y /= coef
-        v /= coef
 
-        X, y, v = self.do_aug(X, y, v)
+        X, y = self.do_aug(X, y)
 
         if np.random.uniform() < self.mixup_rate:
-            X, y, v = self.do_mixup(X, y, v)
+            X, y = self.do_mixup(X, y)
 
         X_mag = np.abs(X)
         y_mag = np.abs(y)
-        v_mag = np.abs(v)
 
-        return X_mag, y_mag, v_mag
-        # return X, y, v
+        return X_mag, y_mag
+        # return X, y
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
@@ -139,49 +132,39 @@ class VocalRemoverValidationSet(torch.utils.data.Dataset):
         path = self.patch_list[idx]
         data = np.load(path)
 
-        X, y, v = data['X'], data['y'], data['v']
+        X, y = data['X'], data['y']
 
         X_mag = np.abs(X)
         y_mag = np.abs(y)
-        v_mag = np.abs(v)
 
-        return X_mag, y_mag, v_mag
-        # return X, y, v
+        return X_mag, y_mag
+        # return X, y
 
 
-def make_pair(X_dir, y_dir, v_dir=None):
+def make_pair(mix_dir, inst_dir):
     input_exts = ['.wav', '.m4a', '.mp3', '.mp4', '.flac']
 
     X_list = sorted([
-        os.path.join(X_dir, fname)
-        for fname in os.listdir(X_dir)
+        os.path.join(mix_dir, fname)
+        for fname in os.listdir(mix_dir)
         if os.path.splitext(fname)[1] in input_exts
     ])
     y_list = sorted([
-        os.path.join(y_dir, fname)
-        for fname in os.listdir(y_dir)
+        os.path.join(inst_dir, fname)
+        for fname in os.listdir(inst_dir)
         if os.path.splitext(fname)[1] in input_exts
     ])
 
-    if v_dir is not None:
-        v_list = sorted([
-            os.path.join(v_dir, fname)
-            for fname in os.listdir(v_dir)
-            if os.path.splitext(fname)[1] in input_exts
-        ])
-        filelist = list(zip(X_list, y_list, v_list))
-    else:
-        filelist = list(zip(X_list, y_list))
+    filelist = list(zip(X_list, y_list))
 
     return filelist
 
 
-def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[], vocals=True):
+def train_val_split(dataset_dir, split_mode, val_rate, val_filelist):
     if split_mode == 'random':
         filelist = make_pair(
             os.path.join(dataset_dir, 'mixtures'),
-            os.path.join(dataset_dir, 'instruments'),
-            os.path.join(dataset_dir, 'vocals') if vocals else None
+            os.path.join(dataset_dir, 'instruments')
         )
 
         random.shuffle(filelist)
@@ -198,17 +181,15 @@ def train_val_split(dataset_dir, split_mode, val_rate, val_filelist=[], vocals=T
     elif split_mode == 'subdirs':
         if len(val_filelist) != 0:
             raise ValueError('`val_filelist` option is not available with `subdirs` mode')
-        
+
         train_filelist = make_pair(
             os.path.join(dataset_dir, 'training/mixtures'),
-            os.path.join(dataset_dir, 'training/instruments'),
-            os.path.join(dataset_dir, 'training/vocals') if vocals else None
+            os.path.join(dataset_dir, 'training/instruments')
         )
 
         val_filelist = make_pair(
             os.path.join(dataset_dir, 'validation/mixtures'),
-            os.path.join(dataset_dir, 'validation/instruments'),
-            os.path.join(dataset_dir, 'validation/vocals') if vocals else None
+            os.path.join(dataset_dir, 'validation/instruments')
         )
 
     return train_filelist, val_filelist
@@ -226,12 +207,12 @@ def make_padding(width, cropsize, offset):
 
 def make_training_set(filelist, sr, hop_length, n_fft):
     ret = []
-    for X_path, y_path, v_path in tqdm(filelist):
-        X, y, v, X_cache_path, y_cache_path, v_cache_path = spec_utils.cache_or_load(
-            X_path, y_path, v_path, sr, hop_length, n_fft
+    for X_path, y_path in tqdm(filelist):
+        X, y, X_cache_path, y_cache_path = spec_utils.cache_or_load(
+            X_path, y_path, sr, hop_length, n_fft
         )
-        coef = np.max([np.abs(X).max(), np.abs(y).max(), np.abs(v).max()])
-        ret.append([X_cache_path, y_cache_path, v_cache_path, coef])
+        coef = np.max([np.abs(X).max(), np.abs(y).max()])
+        ret.append([X_cache_path, y_cache_path, coef])
 
     return ret
 
@@ -241,17 +222,16 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
     patch_dir = 'cs{}_sr{}_hl{}_nf{}_of{}'.format(cropsize, sr, hop_length, n_fft, offset)
     os.makedirs(patch_dir, exist_ok=True)
 
-    for X_path, y_path, v_path in tqdm(filelist):
+    for X_path, y_path in tqdm(filelist):
         basename = os.path.splitext(os.path.basename(X_path))[0]
 
-        X, y, v, _, _, _ = spec_utils.cache_or_load(X_path, y_path, v_path, sr, hop_length, n_fft)
-        coef = np.max([np.abs(X).max(), np.abs(y).max(), np.abs(v).max()])
-        X, y, v = X / coef, y / coef, v / coef
+        X, y, _, _ = spec_utils.cache_or_load(X_path, y_path, sr, hop_length, n_fft)
+        coef = np.max([np.abs(X).max(), np.abs(y).max()])
+        X, y = X / coef, y / coef
 
         l, r, roi_size = make_padding(X.shape[2], cropsize, offset)
         X_pad = np.pad(X, ((0, 0), (0, 0), (l, r)), mode='constant')
         y_pad = np.pad(y, ((0, 0), (0, 0), (l, r)), mode='constant')
-        v_pad = np.pad(v, ((0, 0), (0, 0), (l, r)), mode='constant')
 
         len_dataset = int(np.ceil(X.shape[2] / roi_size))
         for j in range(len_dataset):
@@ -261,8 +241,7 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
                 np.savez(
                     outpath,
                     X=X_pad[:, :, start:start + cropsize],
-                    y=y_pad[:, :, start:start + cropsize],
-                    v=v_pad[:, :, start:start + cropsize]
+                    y=y_pad[:, :, start:start + cropsize]
                 )
             patch_list.append(outpath)
 
