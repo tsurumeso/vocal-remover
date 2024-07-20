@@ -44,25 +44,19 @@ def main():
     for mix_path, inst_path in filelist:
         X_basename = os.path.splitext(os.path.basename(mix_path))[0]
         y_basename = os.path.splitext(os.path.basename(inst_path))[0]
-        pv_basename = X_basename + '_PseudoVocals'
-        pi_basename = X_basename + '_PseudoInstruments'
+        v_basename = X_basename + '_Vocals'
+        # p_basename = X_basename + '_PseudoInstruments'
 
         print('converting {}...'.format(X_basename))
 
-        X_dir = os.path.dirname(mix_path)
-        y_dir = os.path.dirname(inst_path)
-        pv_dir = os.path.join(os.path.split(y_dir)[0], 'pseudo_vocals')
-        pi_dir = os.path.join(os.path.split(y_dir)[0], 'pseudo_instruments')
-
-        X_cache_dir = os.path.join(X_dir, cache_dir)
-        y_cache_dir = os.path.join(y_dir, cache_dir)
-        pv_cache_dir = os.path.join(pv_dir, cache_dir)
-        pi_cache_dir = os.path.join(pi_dir, cache_dir)
+        X_cache_dir = os.path.join(os.path.dirname(mix_path), cache_dir)
+        y_cache_dir = os.path.join(os.path.dirname(inst_path), cache_dir)
+        v_dir = os.path.join(os.path.split(os.path.dirname(inst_path))[0], 'vocals')
+        v_cache_dir = os.path.join(v_dir, cache_dir)
 
         os.makedirs(X_cache_dir, exist_ok=True)
         os.makedirs(y_cache_dir, exist_ok=True)
-        os.makedirs(pv_cache_dir, exist_ok=True)
-        os.makedirs(pi_cache_dir, exist_ok=True)
+        os.makedirs(v_cache_dir, exist_ok=True)
 
         X, sr = librosa.load(
             mix_path, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
@@ -78,20 +72,20 @@ def main():
         y = spec_utils.wave_to_spectrogram(y, args.hop_length, args.n_fft)
 
         sp = inference.Separator(model, device, args.batchsize, args.cropsize)
-        _, pv = sp.separate_tta(X - y)
-        # pa, pv = sp.separate_tta(X - y)
+        _, v = sp.separate_tta(X - y)
+        # a, v = sp.separate_tta(X - y)
 
-        # pi = y + pa
+        # p = y + a
 
-        # wave = spec_utils.spectrogram_to_wave(pv, hop_length=args.hop_length)
-        sf.write('{}/{}.wav'.format(pv_dir, pv_basename), [0], sr)
-        # wave = spec_utils.spectrogram_to_wave(pi, hop_length=args.hop_length)
-        sf.write('{}/{}.wav'.format(pi_dir, pi_basename), [0], sr)
+        # wave = spec_utils.spectrogram_to_wave(p, hop_length=args.hop_length)
+        # sf.write('{}/{}.wav'.format(v_dir, p_basename), [0], sr)
+        # wave = spec_utils.spectrogram_to_wave(v, hop_length=args.hop_length)
+        sf.write('{}/{}.wav'.format(v_dir, v_basename), [0], sr)
 
         np.save('{}/{}.npy'.format(X_cache_dir, X_basename), X.transpose(2, 0, 1))
         np.save('{}/{}.npy'.format(y_cache_dir, y_basename), y.transpose(2, 0, 1))
-        np.save('{}/{}.npy'.format(pv_cache_dir, pv_basename), pv.transpose(2, 0, 1))
-        # np.save('{}/{}.npy'.format(pi_cache_dir, pi_basename), pi.transpose(2, 0, 1))
+        # np.save('{}/{}.npy'.format(y_cache_dir, p_basename), p.transpose(2, 0, 1))
+        np.save('{}/{}.npy'.format(v_cache_dir, v_basename), v.transpose(2, 0, 1))
 
 
 if __name__ == '__main__':
