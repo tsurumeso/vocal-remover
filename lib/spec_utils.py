@@ -119,28 +119,39 @@ def align_wave_head_and_tail(a, b, sr):
     return a, b
 
 
-def cache_or_load(X_path, y_path, v_path, sr, hop_length, n_fft):
-    X_basename = os.path.splitext(os.path.basename(X_path))[0]
-    y_basename = os.path.splitext(os.path.basename(y_path))[0]
-    v_basename = os.path.splitext(os.path.basename(v_path))[0]
+def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
+    mix_basename = os.path.splitext(os.path.basename(mix_path))[0]
+    inst_basename = os.path.splitext(os.path.basename(inst_path))[0]
 
     cache_dir = 'sr{}_hl{}_nf{}'.format(sr, hop_length, n_fft)
-    X_cache_dir = os.path.join(os.path.dirname(X_path), cache_dir)
-    y_cache_dir = os.path.join(os.path.dirname(y_path), cache_dir)
-    v_cache_dir = os.path.join(os.path.dirname(v_path), cache_dir)
+    mix_cache_dir = os.path.join(os.path.dirname(mix_path), cache_dir)
+    inst_cache_dir = os.path.join(os.path.dirname(inst_path), cache_dir)
+    os.makedirs(mix_cache_dir, exist_ok=True)
+    os.makedirs(inst_cache_dir, exist_ok=True)
 
-    X_cache_path = os.path.join(X_cache_dir, X_basename + '.npy')
-    y_cache_path = os.path.join(y_cache_dir, y_basename + '.npy')
-    v_cache_path = os.path.join(v_cache_dir, v_basename + '.npy')
+    mix_cache_path = os.path.join(mix_cache_dir, mix_basename + '.npy')
+    inst_cache_path = os.path.join(inst_cache_dir, inst_basename + '.npy')
 
-    if os.path.exists(X_cache_path) and os.path.exists(y_cache_path) and os.path.exists(v_cache_path):
-        X = np.load(X_cache_path).transpose(1, 2, 0)
-        y = np.load(y_cache_path).transpose(1, 2, 0)
-        v = np.load(v_cache_path).transpose(1, 2, 0)
+    if os.path.exists(mix_cache_path) and os.path.exists(inst_cache_path):
+        X = np.load(mix_cache_path).transpose(1, 2, 0)
+        y = np.load(inst_cache_path).transpose(1, 2, 0)
+    else:
+        X, _ = librosa.load(
+            mix_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
+        y, _ = librosa.load(
+            inst_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
 
-    assert X.shape == y.shape == v.shape
+        X, y = align_wave_head_and_tail(X, y, sr)
 
-    return X, y, v, X_cache_path, y_cache_path, v_cache_path
+        X = wave_to_spectrogram(X, hop_length, n_fft)
+        y = wave_to_spectrogram(y, hop_length, n_fft)
+
+        np.save(mix_cache_path, X.transpose(2, 0, 1))
+        np.save(inst_cache_path, y.transpose(2, 0, 1))
+
+    assert X.shape == y.shape
+
+    return X, y, mix_cache_path, inst_cache_path
 
 
 def spectrogram_to_wave(spec, hop_length=1024):
