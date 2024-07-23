@@ -54,30 +54,29 @@ class CascadedNet(nn.Module):
         self.nin_lstm = self.max_bin // 2
         self.offset = 64
 
-        nin = 4 if is_complex else 2
+        self.nin = 4 if is_complex else 2
 
         self.stg1_low_band_net = nn.Sequential(
-            BaseNet(nin, nout // 2, self.nin_lstm // 2, nout_lstm),
+            BaseNet(self.nin, nout // 2, self.nin_lstm // 2, nout_lstm),
             layers.Conv2DBNActiv(nout // 2, nout // 4, 1, 1, 0)
         )
         self.stg1_high_band_net = BaseNet(
-            nin, nout // 4, self.nin_lstm // 2, nout_lstm // 2
+            self.nin, nout // 4, self.nin_lstm // 2, nout_lstm // 2
         )
 
         self.stg2_low_band_net = nn.Sequential(
-            BaseNet(nout // 4 + nin, nout, self.nin_lstm // 2, nout_lstm),
+            BaseNet(nout // 4 + self.nin, nout, self.nin_lstm // 2, nout_lstm),
             layers.Conv2DBNActiv(nout, nout // 2, 1, 1, 0)
         )
         self.stg2_high_band_net = BaseNet(
-            nout // 4 + nin, nout // 2, self.nin_lstm // 2, nout_lstm // 2
+            nout // 4 + self.nin, nout // 2, self.nin_lstm // 2, nout_lstm // 2
         )
 
         self.stg3_full_band_net = BaseNet(
-            3 * nout // 4 + nin, nout, self.nin_lstm, nout_lstm
+            3 * nout // 4 + self.nin, nout, self.nin_lstm, nout_lstm
         )
 
-        self.out_y = nn.Conv2d(nout, nin, 1, bias=False)
-        self.out_v = nn.Conv2d(nout, nin, 1, bias=False)
+        self.out = nn.Conv2d(nout, self.nin * 2, 1, bias=False)
 
     def forward(self, x):
         if self.is_complex:
@@ -102,28 +101,19 @@ class CascadedNet(nn.Module):
         f3 = self.stg3_full_band_net(f3_in)
 
         if self.is_complex:
-            mask_y = self.out_y(f3)
-            mask_y = torch.complex(mask_y[:, :2], mask_y[:, 2:])
-            mask_y = self.bounded_mask(mask_y)
-            mask_v = self.out_v(f3)
-            mask_v = torch.complex(mask_v[:, :2], mask_v[:, 2:])
-            mask_v = self.bounded_mask(mask_v)
+            mask = self.out(f3)
+            mask = torch.complex(mask[:, :self.nin], mask[:, self.nin:])
+            mask = self.bounded_mask(mask)
         else:
-            mask_y = torch.sigmoid(self.out_y(f3))
-            mask_v = torch.sigmoid(self.out_v(f3))
+            mask = torch.sigmoid(self.out(f3))
 
-        mask_y = F.pad(
-            input=mask_y,
-            pad=(0, 0, 0, self.output_bin - mask_y.size()[2]),
-            mode='replicate'
-        )
-        mask_v = F.pad(
-            input=mask_v,
-            pad=(0, 0, 0, self.output_bin - mask_v.size()[2]),
+        mask = F.pad(
+            input=mask,
+            pad=(0, 0, 0, self.output_bin - mask.size()[2]),
             mode='replicate'
         )
 
-        return mask_y, mask_v
+        return mask
 
     def bounded_mask(self, mask, eps=1e-8):
         mask_mag = torch.abs(mask)
@@ -131,23 +121,20 @@ class CascadedNet(nn.Module):
         return mask
 
     def predict_mask(self, x):
-        mask_y, mask_v = self.forward(x)
+        mask = self.forward(x)
 
         if self.offset > 0:
-            mask_y = mask_y[:, :, :, self.offset:-self.offset]
-            mask_v = mask_v[:, :, :, self.offset:-self.offset]
-            assert mask_y.size()[3] > 0 and mask_v.size()[3] > 0
+            mask = mask[:, :, :, self.offset:-self.offset]
+            assert mask.size()[3] > 0
 
-        return mask_y, mask_v
+        return mask
 
     def predict(self, x):
-        mask_y, mask_v = self.forward(x)
-        pred_y = x * mask_y
-        pred_v = x * mask_v
+        mask = self.forward(x)
+        pred = torch.cat([x, x], dim=1) * mask
 
         if self.offset > 0:
-            pred_y = pred_y[:, :, :, self.offset:-self.offset]
-            pred_v = pred_v[:, :, :, self.offset:-self.offset]
-            assert pred_y.size()[3] > 0 and pred_v.size()[3] > 0
+            pred = pred[:, :, :, self.offset:-self.offset]
+            assert pred.size()[3] > 0
 
-        return pred_y, pred_v
+        return pred

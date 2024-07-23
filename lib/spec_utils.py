@@ -57,40 +57,16 @@ def spectrogram_to_image(spec, mode='magnitude'):
     return img
 
 
-def merge_artifacts(y_mask, thres=0.05, min_range=64, fade_size=32):
-    if min_range < fade_size * 2:
-        raise ValueError('min_range must be >= fade_size * 2')
-
-    idx = np.where(y_mask.min(axis=(0, 1)) > thres)[0]
-    start_idx = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
-    end_idx = np.append(idx[np.where(np.diff(idx) != 1)[0]], idx[-1])
-    artifact_idx = np.where(end_idx - start_idx > min_range)[0]
-    weight = np.zeros_like(y_mask)
-    if len(artifact_idx) > 0:
-        start_idx = start_idx[artifact_idx]
-        end_idx = end_idx[artifact_idx]
-        old_e = None
-        for s, e in zip(start_idx, end_idx):
-            if old_e is not None and s - old_e < fade_size:
-                s = old_e - fade_size * 2
-
-            if s != 0:
-                weight[:, :, s:s + fade_size] = np.linspace(0, 1, fade_size)
-            else:
-                s -= fade_size
-
-            if e != y_mask.shape[2]:
-                weight[:, :, e - fade_size:e] = np.linspace(1, 0, fade_size)
-            else:
-                e += fade_size
-
-            weight[:, :, s + fade_size:e - fade_size] = 1
-            old_e = e
-
-    v_mask = 1 - y_mask
-    y_mask += weight * v_mask
-
-    return y_mask
+def get_reduction_weight(n_fft, sr, reduction_level):
+    bins = n_fft // 2 + 1
+    freq_to_bin = 2 * bins / sr
+    unstable_bins = int(200 * freq_to_bin)
+    stable_bins = int(22050 * freq_to_bin)
+    return np.concatenate([
+        np.linspace(0, 1, unstable_bins + 1, dtype=np.float32)[:unstable_bins, None],
+        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
+        np.zeros((bins - stable_bins, 1), dtype=np.float32),
+    ], axis=0) * reduction_level
 
 
 def align_wave_head_and_tail(a, b, sr):

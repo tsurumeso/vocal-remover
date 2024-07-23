@@ -21,15 +21,18 @@ class Separator(object):
         self.device = device
         self.batchsize = batchsize
         self.cropsize = cropsize
+        self.is_complex = model.is_complex
 
-    def _postprocess(self, X_spec, mask_y, mask_v):
-        X_mag = np.abs(X_spec)
-        X_phase = np.angle(X_spec)
+    def _postprocess(self, X_spec, mask):
+        if self.is_complex:
+            y_spec = X_spec * mask[:2]
+            v_spec = X_spec * mask[2:]
+        else:
+            X_mag = np.abs(X_spec)
+            X_phase = np.exp(1.j * np.angle(X_spec))
 
-        y_spec = X_mag * mask_y * np.exp(1.j * X_phase)
-        v_spec = X_mag * mask_v * np.exp(1.j * X_phase)
-        # y_spec = X_spec * mask_y
-        # v_spec = X_spec * mask_v
+            y_spec = X_mag * mask[:2] * X_phase
+            v_spec = X_mag * mask[2:] * X_phase
 
         return y_spec, v_spec
 
@@ -45,27 +48,24 @@ class Separator(object):
 
         self.model.eval()
         with torch.no_grad():
-            mask_y_list = []
-            mask_v_list = []
+            mask_list = []
             # To reduce the overhead, dataloader is not used.
             for i in tqdm(range(0, patches, self.batchsize)):
                 X_batch = X_dataset[i: i + self.batchsize]
                 X_batch = torch.from_numpy(X_batch).to(self.device)
 
-                mask_y, mask_v = self.model.predict_mask(torch.abs(X_batch))
+                if not self.is_complex:
+                    X_batch = torch.abs(X_batch)
 
-                mask_y = mask_y.detach().cpu().numpy()
-                mask_y = np.concatenate(mask_y, axis=2)
-                mask_y_list.append(mask_y)
+                mask = self.model.predict_mask(X_batch)
 
-                mask_v = mask_v.detach().cpu().numpy()
-                mask_v = np.concatenate(mask_v, axis=2)
-                mask_v_list.append(mask_v)
+                mask = mask.detach().cpu().numpy()
+                mask = np.concatenate(mask, axis=2)
+                mask_list.append(mask)
 
-            mask_y = np.concatenate(mask_y_list, axis=2)
-            mask_v = np.concatenate(mask_v_list, axis=2)
+            mask = np.concatenate(mask_list, axis=2)
 
-        return mask_y, mask_v
+        return mask
 
     def separate(self, X_spec):
         n_frame = X_spec.shape[2]
@@ -73,11 +73,10 @@ class Separator(object):
         X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
         X_spec_pad /= np.abs(X_spec).max()
 
-        mask_y, mask_v = self._separate(X_spec_pad, roi_size)
-        mask_y = mask_y[:, :, :n_frame]
-        mask_v = mask_v[:, :, :n_frame]
+        mask = self._separate(X_spec_pad, roi_size)
+        mask = mask[:, :, :n_frame]
 
-        y_spec, v_spec = self._postprocess(X_spec, mask_y, mask_v)
+        y_spec, v_spec = self._postprocess(X_spec, mask)
 
         return y_spec, v_spec
 
@@ -87,21 +86,19 @@ class Separator(object):
         X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
         X_spec_pad /= X_spec_pad.max()
 
-        mask_y, mask_v = self._separate(X_spec_pad, roi_size)
+        mask = self._separate(X_spec_pad, roi_size)
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
         X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
         X_spec_pad /= X_spec_pad.max()
 
-        mask_y_tta, mask_v_tta = self._separate(X_spec_pad, roi_size)
-        mask_y_tta = mask_y_tta[:, :, roi_size // 2:]
-        mask_v_tta = mask_v_tta[:, :, roi_size // 2:]
+        mask_tta = self._separate(X_spec_pad, roi_size)
+        mask_tta = mask_tta[:, :, roi_size // 2:]
 
-        mask_y = (mask_y[:, :, :n_frame] + mask_y_tta[:, :, :n_frame]) * 0.5
-        mask_v = (mask_v[:, :, :n_frame] + mask_v_tta[:, :, :n_frame]) * 0.5
+        mask = (mask[:, :, :n_frame] + mask_tta[:, :, :n_frame]) * 0.5
 
-        y_spec, v_spec = self._postprocess(X_spec, mask_y, mask_v)
+        y_spec, v_spec = self._postprocess(X_spec, mask)
 
         return y_spec, v_spec
 
@@ -123,6 +120,7 @@ def main():
     p.add_argument('--output_image', '-I', action='store_true')
     p.add_argument('--tta', '-t', action='store_true')
     p.add_argument('--output_dir', '-o', type=str, default="")
+    p.add_argument('--complex', '-X', action='store_true')
     args = p.parse_args()
 
     print('loading model...', end=' ')
@@ -132,7 +130,7 @@ def main():
             device = torch.device('cuda:{}'.format(args.gpu))
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
             device = torch.device('mps')
-    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
+    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128, args.complex)
     model.load_state_dict(torch.load(args.pretrained_model, map_location='cpu'))
     model.to(device)
     print('done')

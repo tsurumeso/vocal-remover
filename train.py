@@ -35,84 +35,50 @@ def setup_logger(name, logfile='LOGFILENAME.log'):
 
 
 def to_wave(spec, n_fft, hop_length, window):
-    B, _, N, T = spec.shape
+    B, C, N, T = spec.shape
     wave = spec.reshape(-1, N, T)
     wave = torch.istft(wave, n_fft, hop_length, window=window)
-    wave = wave.reshape(B, 2, -1)
+    wave = wave.reshape(B, C, -1)
 
     return wave
 
 
-def sdr_loss(y, y_pred, eps=1e-8):
-    sdr = (y * y_pred).sum()
-    sdr /= torch.linalg.norm(y) * torch.linalg.norm(y_pred) + eps
-
-    return -sdr
-
-
-def weighted_sdr_loss(y, y_pred, n, n_pred, eps=1e-8):
-    y_sdr = (y * y_pred).sum()
-    y_sdr /= torch.linalg.norm(y) * torch.linalg.norm(y_pred) + eps
-
-    noise_sdr = (n * n_pred).sum()
-    noise_sdr /= torch.linalg.norm(n) * torch.linalg.norm(n_pred) + eps
-
-    a = torch.sum(y ** 2)
-    a /= torch.sum(y ** 2) + torch.sum(n ** 2) + eps
-
-    loss = a * y_sdr + (1 - a) * noise_sdr
-
-    return -loss
-
-
 def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
+    is_complex = model.is_complex
+    if is_complex:
+        n_fft = model.n_fft
+        hop_length = model.hop_length
+        window = torch.hann_window(n_fft).to(device)
+
     model.train()
-    # n_fft = model.n_fft
-    # hop_length = model.hop_length
-    # window = torch.hann_window(n_fft).to(device)
-
+    crit_l1 = nn.L1Loss(reduction='none')
     sum_loss_y = sum_loss_v = 0
-    crit_l1 = nn.L1Loss()
 
-    for itr, (X_batch, y_batch, v_batch) in enumerate(dataloader):
+    for itr, (X_batch, y_batch) in enumerate(dataloader):
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device)
-        v_batch = v_batch.to(device)
 
-        mask_y, mask_v = model(X_batch)
+        mask = model(X_batch)
+        y_pred = torch.cat([X_batch, X_batch], dim=1) * mask
 
-        # y_pred = X_batch * mask_y
-        # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
-        # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
+        if is_complex:
+            y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
+            y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-        # v_pred = X_batch * mask_v
-        # v_wave_batch = to_wave(v_batch, n_fft, hop_length, window)
-        # v_wave_pred = to_wave(v_pred, n_fft, hop_length, window)
+            loss = torch.mean(crit_l1(torch.abs(y_batch), torch.abs(y_pred)), dim=(2, 3))
+            loss += torch.mean(crit_l1(y_wave_batch, y_wave_pred), dim=2)
+        else:
+            loss = crit_l1(y_pred, y_batch)
 
-        loss_y = crit_l1(mask_y * X_batch, y_batch)
-        loss_v = crit_l1(mask_v * X_batch, v_batch)
-
-        # loss_y = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
-        # loss_y += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
-        # loss_v = crit_l1(torch.abs(v_batch), torch.abs(v_pred))
-        # loss_v += sdr_loss(v_wave_batch, v_wave_pred) * 0.01
-
-        loss = loss_y + loss_v
-
-        accum_loss = loss / accumulation_steps
+        accum_loss = torch.mean(loss) / accumulation_steps
         accum_loss.backward()
 
         if (itr + 1) % accumulation_steps == 0:
             optimizer.step()
             model.zero_grad()
 
-        sum_loss_y += loss_y.item() * len(X_batch)
-        sum_loss_v += loss_v.item() * len(X_batch)
-
-    # the rest batch
-    if (itr + 1) % accumulation_steps != 0:
-        optimizer.step()
-        model.zero_grad()
+        sum_loss_y += torch.mean(loss[:, :2]).item() * len(X_batch)
+        sum_loss_v += torch.mean(loss[:, 2:]).item() * len(X_batch)
 
     avg_loss_y = sum_loss_y / len(dataloader.dataset)
     avg_loss_v = sum_loss_v / len(dataloader.dataset)
@@ -121,39 +87,35 @@ def train_epoch(dataloader, model, device, optimizer, accumulation_steps):
 
 
 def validate_epoch(dataloader, model, device):
-    model.eval()
-    # n_fft = model.n_fft
-    # hop_length = model.hop_length
-    # window = torch.hann_window(n_fft).to(device)
+    is_complex = model.is_complex
+    if is_complex:
+        n_fft = model.n_fft
+        hop_length = model.hop_length
+        window = torch.hann_window(n_fft).to(device)
 
+    model.eval()
     sum_loss_y = sum_loss_v = 0
-    crit_l1 = nn.L1Loss()
+    crit_l1 = nn.L1Loss(reduction='none')
 
     with torch.no_grad():
-        for X_batch, y_batch, v_batch in dataloader:
+        for X_batch, y_batch in dataloader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device)
-            v_batch = v_batch.to(device)
 
-            y_pred, v_pred = model.predict(X_batch)
-
+            y_pred = model.predict(X_batch)
             y_batch = spec_utils.crop_center(y_batch, y_pred)
-            v_batch = spec_utils.crop_center(v_batch, y_pred)
-            # y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
-            # y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
-            # v_wave_batch = to_wave(v_batch, n_fft, hop_length, window)
-            # v_wave_pred = to_wave(v_pred, n_fft, hop_length, window)
 
-            loss_y = crit_l1(y_pred, y_batch)
-            loss_v = crit_l1(v_pred, v_batch)
+            if is_complex:
+                y_wave_batch = to_wave(y_batch, n_fft, hop_length, window)
+                y_wave_pred = to_wave(y_pred, n_fft, hop_length, window)
 
-            # loss_y = crit_l1(torch.abs(y_batch), torch.abs(y_pred))
-            # loss_y += sdr_loss(y_wave_batch, y_wave_pred) * 0.01
-            # loss_v = crit_l1(torch.abs(v_batch), torch.abs(v_pred))
-            # loss_v += sdr_loss(v_wave_batch, v_wave_pred) * 0.01
+                loss = torch.mean(crit_l1(torch.abs(y_batch), torch.abs(y_pred)), dim=(2, 3))
+                loss += torch.mean(crit_l1(y_wave_batch, y_wave_pred), dim=2)
+            else:
+                loss = crit_l1(y_pred, y_batch)
 
-            sum_loss_y += loss_y.item() * len(X_batch)
-            sum_loss_v += loss_v.item() * len(X_batch)
+            sum_loss_y += torch.mean(loss[:, :2]).item() * len(X_batch)
+            sum_loss_v += torch.mean(loss[:, 2:]).item() * len(X_batch)
 
     avg_loss_y = sum_loss_y / len(dataloader.dataset)
     avg_loss_v = sum_loss_v / len(dataloader.dataset)
@@ -189,6 +151,7 @@ def main():
     p.add_argument('--mixup_rate', '-M', type=float, default=0.0)
     p.add_argument('--mixup_alpha', '-a', type=float, default=1.0)
     p.add_argument('--pretrained_model', '-P', type=str, default=None)
+    p.add_argument('--complex', '-X', action='store_true')
     p.add_argument('--debug', action='store_true')
     args = p.parse_args()
 
@@ -203,7 +166,7 @@ def main():
         with open(args.val_filelist, 'r', encoding='utf8') as f:
             val_filelist = json.load(f)
 
-    train_filelist, val_filelist = dataset.train_val_split(
+    trn_filelist, val_filelist = dataset.train_val_split(
         dataset_dir=args.dataset,
         split_mode=args.split_mode,
         val_rate=args.val_rate,
@@ -212,7 +175,7 @@ def main():
 
     if args.debug:
         logger.info('### DEBUG MODE')
-        train_filelist = train_filelist[:1]
+        trn_filelist = trn_filelist[:1]
         val_filelist = val_filelist[:1]
     elif args.val_filelist is None and args.split_mode == 'random':
         with open('val_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
@@ -221,18 +184,10 @@ def main():
     for i, (X_fname, y_fname, _) in enumerate(val_filelist):
         logger.info('{} {} {}'.format(i + 1, os.path.basename(X_fname), os.path.basename(y_fname)))
 
-    bins = args.n_fft // 2 + 1
-    freq_to_bin = 2 * bins / args.sr
-    unstable_bins = int(200 * freq_to_bin)
-    stable_bins = int(22050 * freq_to_bin)
-    reduction_weight = np.concatenate([
-        np.linspace(0, 1, unstable_bins, dtype=np.float32)[:, None],
-        np.linspace(1, 0, stable_bins - unstable_bins, dtype=np.float32)[:, None],
-        np.zeros((bins - stable_bins, 1), dtype=np.float32),
-    ], axis=0) * args.reduction_level
+    reduction_weight = spec_utils.get_reduction_weight(args.n_fft, args.sr, args.reduction_level)
 
     device = torch.device('cpu')
-    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
+    model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128, args.complex)
     if args.pretrained_model is not None:
         model.load_state_dict(torch.load(args.pretrained_model, map_location=device))
     if torch.cuda.is_available() and args.gpu >= 0:
@@ -252,30 +207,31 @@ def main():
         min_lr=args.lr_min,
     )
 
-    training_set = dataset.make_training_set(
-        filelist=train_filelist,
+    trn_set = dataset.make_training_set(
+        filelist=trn_filelist,
         sr=args.sr,
         hop_length=args.hop_length,
         n_fft=args.n_fft
     )
 
-    train_dataset = dataset.VocalRemoverTrainingSet(
-        training_set * args.patches,
+    trn_dataset = dataset.VocalRemoverTrainingSet(
+        training_set=trn_set * args.patches,
         cropsize=args.cropsize,
         reduction_rate=args.reduction_rate,
         reduction_weight=reduction_weight,
         mixup_rate=args.mixup_rate,
-        mixup_alpha=args.mixup_alpha
+        mixup_alpha=args.mixup_alpha,
+        is_complex=args.complex
     )
 
-    train_dataloader = torch.utils.data.DataLoader(
-        dataset=train_dataset,
+    trn_dataloader = torch.utils.data.DataLoader(
+        dataset=trn_dataset,
         batch_size=args.batchsize,
         shuffle=True,
         num_workers=args.num_workers
     )
 
-    patch_list = dataset.make_validation_set(
+    val_set = dataset.make_validation_set(
         filelist=val_filelist,
         cropsize=args.val_cropsize,
         sr=args.sr,
@@ -285,7 +241,8 @@ def main():
     )
 
     val_dataset = dataset.VocalRemoverValidationSet(
-        patch_list=patch_list
+        validation_set=val_set,
+        is_complex=args.complex
     )
 
     val_dataloader = torch.utils.data.DataLoader(
@@ -299,15 +256,15 @@ def main():
     best_loss = np.inf
     for epoch in range(args.epoch):
         logger.info('# epoch {}'.format(epoch))
-        train_loss_y, train_loss_v = train_epoch(train_dataloader, model, device, optimizer, args.accumulation_steps)
+        trn_loss_y, trn_loss_v = train_epoch(trn_dataloader, model, device, optimizer, args.accumulation_steps)
         val_loss_y, val_loss_v = validate_epoch(val_dataloader, model, device)
 
         logger.info(
             '  * training loss (y, v) = ({:.6f}, {:.6f}), validation loss (y, v) = ({:.6f}, {:.6f})'
-            .format(train_loss_y, train_loss_v, val_loss_y, val_loss_v)
+            .format(trn_loss_y, trn_loss_v, val_loss_y, val_loss_v)
         )
 
-        train_loss = train_loss_y + train_loss_v
+        trn_loss = trn_loss_y + trn_loss_v
         val_loss = val_loss_y + val_loss_v
         scheduler.step(val_loss)
 
@@ -317,7 +274,7 @@ def main():
             model_path = 'models/model_iter{}.pth'.format(epoch)
             torch.save(model.state_dict(), model_path)
 
-        log.append([train_loss, val_loss])
+        log.append([trn_loss, val_loss])
         with open('loss_{}.json'.format(timestamp), 'w', encoding='utf8') as f:
             json.dump(log, f, ensure_ascii=False)
 

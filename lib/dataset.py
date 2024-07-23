@@ -14,13 +14,16 @@ except ModuleNotFoundError:
 
 class VocalRemoverTrainingSet(torch.utils.data.Dataset):
 
-    def __init__(self, training_set, cropsize, reduction_rate, reduction_weight, mixup_rate, mixup_alpha):
+    def __init__(
+            self, training_set, cropsize, reduction_rate, reduction_weight,
+            mixup_rate, mixup_alpha, is_complex=False):
         self.training_set = training_set
         self.cropsize = cropsize
         self.reduction_rate = reduction_rate
         self.reduction_weight = reduction_weight
         self.mixup_rate = mixup_rate
         self.mixup_alpha = mixup_alpha
+        self.is_complex = is_complex
 
     def __len__(self):
         return len(self.training_set)
@@ -119,34 +122,37 @@ class VocalRemoverTrainingSet(torch.utils.data.Dataset):
         if np.random.uniform() < self.mixup_rate:
             X, y, v = self.do_mixup(X, y, v)
 
-        X_mag = np.abs(X)
-        y_mag = np.abs(y)
-        v_mag = np.abs(v)
-
-        return X_mag, y_mag, v_mag
-        # return X, y, v
+        if self.is_complex:
+            y = np.concatenate([y, v])
+            return X, y
+        else:
+            X_mag = np.abs(X)
+            y_mag = np.abs(np.concatenate([y, v]))
+            return X_mag, y_mag
 
 
 class VocalRemoverValidationSet(torch.utils.data.Dataset):
 
-    def __init__(self, patch_list):
-        self.patch_list = patch_list
+    def __init__(self, validation_set, is_complex=False):
+        self.validation_set = validation_set
+        self.is_complex = is_complex
 
     def __len__(self):
-        return len(self.patch_list)
+        return len(self.validation_set)
 
     def __getitem__(self, idx):
-        path = self.patch_list[idx]
+        path = self.validation_set[idx]
         data = np.load(path)
 
         X, y, v = data['X'], data['y'], data['v']
 
-        X_mag = np.abs(X)
-        y_mag = np.abs(y)
-        v_mag = np.abs(v)
-
-        return X_mag, y_mag, v_mag
-        # return X, y, v
+        if self.is_complex:
+            y = np.concatenate([y, v])
+            return X, y
+        else:
+            X_mag = np.abs(X)
+            y_mag = np.abs(np.concatenate([y, v]))
+            return X_mag, y_mag
 
 
 def make_pair(X_dir, y_dir, v_dir=None):
@@ -287,17 +293,6 @@ def make_validation_set(filelist, cropsize, sr, hop_length, n_fft, offset):
             patch_list.append(outpath)
 
     return patch_list
-
-
-def get_oracle_data(X, y, oracle_loss, oracle_rate, oracle_drop_rate):
-    k = int(len(X) * oracle_rate * (1 / (1 - oracle_drop_rate)))
-    n = int(len(X) * oracle_rate)
-    indices = np.argsort(oracle_loss)[::-1][:k]
-    indices = np.random.choice(indices, n, replace=False)
-    oracle_X = X[indices].copy()
-    oracle_y = y[indices].copy()
-
-    return oracle_X, oracle_y, indices
 
 
 if __name__ == "__main__":
