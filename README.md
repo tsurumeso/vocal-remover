@@ -20,19 +20,21 @@ pip install -r requirements.txt
 ```
 
 ## Usage
+
+### Command Line Interface
 The following command separates the input into instrumental and vocal tracks. They are saved as `*_Instruments.wav` and `*_Vocals.wav`.
 
-### Run on CPU
+#### Run on CPU
 ```
 python inference.py --input path/to/an/audio/file
 ```
 
-### Run on GPU
+#### Run on GPU
 ```
 python inference.py --input path/to/an/audio/file --gpu 0
 ```
 
-### Advanced options
+#### Advanced options
 `--tta` option performs Test-Time-Augmentation to improve the separation quality.
 ```
 python inference.py --input path/to/an/audio/file --tta --gpu 0
@@ -44,6 +46,24 @@ python inference.py --input path/to/an/audio/file --tta --gpu 0
 ```
 python inference.py --input path/to/an/audio/file --postprocess --gpu 0
 ```
+
+### REST API Interface
+The project now includes a FastAPI-based REST API for vocal separation.
+
+#### Starting the API Server
+```bash
+uvicorn api:app --reload
+```
+
+#### API Documentation
+Access the interactive API documentation at:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+#### API Endpoints
+- POST `/separate/`: Upload and separate audio file
+- GET `/download/instrumental/{temp_id}`: Download separated instrumental
+- GET `/download/vocal/{temp_id}`: Download separated vocals
 
 ## Train your own model
 
@@ -64,6 +84,10 @@ path/to/dataset/
 ```
 python train.py --dataset path/to/dataset --mixup_rate 0.5 --reduction_rate 0.5 --gpu 0
 ```
+
+## Contributors
+- [tsurumeso](https://github.com/tsurumeso) - Original creator
+- [Bigjoon](https://github.com/Bigjoon) - REST API implementation
 
 ## References
 - [1] Jansson et al., "Singing Voice Separation with Deep U-Net Convolutional Networks", https://ejhumphrey.com/assets/pdf/jansson2017singing.pdf
