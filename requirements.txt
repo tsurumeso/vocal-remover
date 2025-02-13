@@ -7,3 +7,8 @@ opencv_python~=4.8.0
 resampy~=0.4.0
 tqdm~=4.66.0
 numpy~=1.26.4
+
+# API related packages
+fastapi~=0.110.0
+uvicorn~=0.27.1
+python-multipart~=0.0.9
