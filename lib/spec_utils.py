@@ -12,7 +12,7 @@ def crop_center(h1, h2):
     if h1_shape[3] == h2_shape[3]:
         return h1
     elif h1_shape[3] < h2_shape[3]:
-        raise ValueError('h1_shape[3] must be greater than h2_shape[3]')
+        raise ValueError("h1_shape[3] must be greater than h2_shape[3]")
 
     # s_freq = (h2_shape[2] - h1_shape[2]) // 2
     # e_freq = s_freq + h1_shape[2]
@@ -31,14 +31,14 @@ def wave_to_spectrogram(wave, hop_length, n_fft):
     return spec
 
 
-def spectrogram_to_image(spec, mode='magnitude'):
-    if mode == 'magnitude':
+def spectrogram_to_image(spec, mode="magnitude"):
+    if mode == "magnitude":
         if np.iscomplexobj(spec):
             y = np.abs(spec)
         else:
             y = spec
-        y = np.log10(y ** 2 + 1e-8)
-    elif mode == 'phase':
+        y = np.log10(y**2 + 1e-8)
+    elif mode == "phase":
         if np.iscomplexobj(spec):
             y = np.angle(spec)
         else:
@@ -50,16 +50,14 @@ def spectrogram_to_image(spec, mode='magnitude'):
 
     if y.ndim == 3:
         img = img.transpose(1, 2, 0)
-        img = np.concatenate([
-            np.max(img, axis=2, keepdims=True), img
-        ], axis=2)
+        img = np.concatenate([np.max(img, axis=2, keepdims=True), img], axis=2)
 
     return img
 
 
 def merge_artifacts(y_mask, thres=0.05, min_range=64, fade_size=32):
     if min_range < fade_size * 2:
-        raise ValueError('min_range must be >= fade_size * 2')
+        raise ValueError("min_range must be >= fade_size * 2")
 
     idx = np.where(y_mask.min(axis=(0, 1)) > thres)[0]
     start_idx = np.insert(idx[np.where(np.diff(idx) != 1)[0] + 1], 0, idx[0])
@@ -75,16 +73,16 @@ def merge_artifacts(y_mask, thres=0.05, min_range=64, fade_size=32):
                 s = old_e - fade_size * 2
 
             if s != 0:
-                weight[:, :, s:s + fade_size] = np.linspace(0, 1, fade_size)
+                weight[:, :, s : s + fade_size] = np.linspace(0, 1, fade_size)
             else:
                 s -= fade_size
 
             if e != y_mask.shape[2]:
-                weight[:, :, e - fade_size:e] = np.linspace(1, 0, fade_size)
+                weight[:, :, e - fade_size : e] = np.linspace(1, 0, fade_size)
             else:
                 e += fade_size
 
-            weight[:, :, s + fade_size:e - fade_size] = 1
+            weight[:, :, s + fade_size : e - fade_size] = 1
             old_e = e
 
     v_mask = 1 - y_mask
@@ -97,24 +95,24 @@ def align_wave_head_and_tail(a, b, sr):
     a, _ = librosa.effects.trim(a)
     b, _ = librosa.effects.trim(b)
 
-    a_mono = a[:, :sr * 4].sum(axis=0)
-    b_mono = b[:, :sr * 4].sum(axis=0)
+    a_mono = a[:, : sr * 4].sum(axis=0)
+    b_mono = b[:, : sr * 4].sum(axis=0)
 
     a_mono -= a_mono.mean()
     b_mono -= b_mono.mean()
 
     offset = len(a_mono) - 1
-    delay = np.argmax(np.correlate(a_mono, b_mono, 'full')) - offset
+    delay = np.argmax(np.correlate(a_mono, b_mono, "full")) - offset
 
     if delay > 0:
         a = a[:, delay:]
     else:
-        b = b[:, np.abs(delay):]
+        b = b[:, np.abs(delay) :]
 
     if a.shape[1] < b.shape[1]:
-        b = b[:, :a.shape[1]]
+        b = b[:, : a.shape[1]]
     else:
-        a = a[:, :b.shape[1]]
+        a = a[:, : b.shape[1]]
 
     return a, b
 
@@ -123,23 +121,21 @@ def cache_or_load(mix_path, inst_path, sr, hop_length, n_fft):
     mix_basename = os.path.splitext(os.path.basename(mix_path))[0]
     inst_basename = os.path.splitext(os.path.basename(inst_path))[0]
 
-    cache_dir = 'sr{}_hl{}_nf{}'.format(sr, hop_length, n_fft)
+    cache_dir = f"sr{sr}_hl{hop_length}_nf{n_fft}"
     mix_cache_dir = os.path.join(os.path.dirname(mix_path), cache_dir)
     inst_cache_dir = os.path.join(os.path.dirname(inst_path), cache_dir)
     os.makedirs(mix_cache_dir, exist_ok=True)
     os.makedirs(inst_cache_dir, exist_ok=True)
 
-    mix_cache_path = os.path.join(mix_cache_dir, mix_basename + '.npy')
-    inst_cache_path = os.path.join(inst_cache_dir, inst_basename + '.npy')
+    mix_cache_path = os.path.join(mix_cache_dir, mix_basename + ".npy")
+    inst_cache_path = os.path.join(inst_cache_dir, inst_basename + ".npy")
 
     if os.path.exists(mix_cache_path) and os.path.exists(inst_cache_path):
         X = np.load(mix_cache_path).transpose(1, 2, 0)
         y = np.load(inst_cache_path).transpose(1, 2, 0)
     else:
-        X, _ = librosa.load(
-            mix_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
-        y, _ = librosa.load(
-            inst_path, sr=sr, mono=False, dtype=np.float32, res_type='kaiser_fast')
+        X, _ = librosa.load(mix_path, sr=sr, mono=False, dtype=np.float32, res_type="kaiser_fast")
+        y, _ = librosa.load(inst_path, sr=sr, mono=False, dtype=np.float32, res_type="kaiser_fast")
 
         X, y = align_wave_head_and_tail(X, y, sr)
 
@@ -166,14 +162,15 @@ def spectrogram_to_wave(spec, hop_length=1024):
 
 
 if __name__ == "__main__":
-    import cv2
     import sys
 
+    import cv2
+
     X, _ = librosa.load(
-        sys.argv[1], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast'
+        sys.argv[1], sr=44100, mono=False, dtype=np.float32, res_type="kaiser_fast"
     )
     y, _ = librosa.load(
-        sys.argv[2], sr=44100, mono=False, dtype=np.float32, res_type='kaiser_fast'
+        sys.argv[2], sr=44100, mono=False, dtype=np.float32, res_type="kaiser_fast"
     )
 
     X, y = align_wave_head_and_tail(X, y, 44100)
@@ -189,10 +186,10 @@ if __name__ == "__main__":
     y_image = spectrogram_to_image(y_spec)
     v_image = spectrogram_to_image(v_spec)
 
-    cv2.imwrite('test_X.jpg', X_image)
-    cv2.imwrite('test_y.jpg', y_image)
-    cv2.imwrite('test_v.jpg', v_image)
+    cv2.imwrite("test_X.jpg", X_image)
+    cv2.imwrite("test_y.jpg", y_image)
+    cv2.imwrite("test_v.jpg", v_image)
 
-    sf.write('test_X.wav', spectrogram_to_wave(X_spec).T, 44100)
-    sf.write('test_y.wav', spectrogram_to_wave(y_spec).T, 44100)
-    sf.write('test_v.wav', spectrogram_to_wave(v_spec).T, 44100)
+    sf.write("test_X.wav", spectrogram_to_wave(X_spec).T, 44100)
+    sf.write("test_y.wav", spectrogram_to_wave(y_spec).T, 44100)
+    sf.write("test_v.wav", spectrogram_to_wave(v_spec).T, 44100)

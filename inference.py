@@ -7,14 +7,10 @@ import soundfile as sf
 import torch
 from tqdm import tqdm
 
-from lib import dataset
-from lib import nets
-from lib import spec_utils
-from lib import utils
+from lib import dataset, nets, spec_utils, utils
 
 
-class Separator(object):
-
+class Separator:
     def __init__(self, model, device=None, batchsize=1, cropsize=256, postprocess=False):
         self.model = model
         self.offset = model.offset
@@ -27,13 +23,13 @@ class Separator(object):
         if self.postprocess:
             mask_mag = np.abs(mask)
             mask_mag = spec_utils.merge_artifacts(mask_mag)
-            mask = mask_mag * np.exp(1.j * np.angle(mask))
+            mask = mask_mag * np.exp(1.0j * np.angle(mask))
 
         X_mag = np.abs(X_spec)
         X_phase = np.angle(X_spec)
 
-        y_spec = mask * X_mag * np.exp(1.j * X_phase)
-        v_spec = (1 - mask) * X_mag * np.exp(1.j * X_phase)
+        y_spec = mask * X_mag * np.exp(1.0j * X_phase)
+        v_spec = (1 - mask) * X_mag * np.exp(1.0j * X_phase)
         # y_spec = X_spec * mask
         # v_spec = X_spec - y_spec
 
@@ -44,7 +40,7 @@ class Separator(object):
         patches = (X_spec_pad.shape[2] - 2 * self.offset) // roi_size
         for i in range(patches):
             start = i * roi_size
-            X_spec_crop = X_spec_pad[:, :, start:start + self.cropsize]
+            X_spec_crop = X_spec_pad[:, :, start : start + self.cropsize]
             X_dataset.append(X_spec_crop)
 
         X_dataset = np.asarray(X_dataset)
@@ -54,7 +50,7 @@ class Separator(object):
             mask_list = []
             # To reduce the overhead, dataloader is not used.
             for i in tqdm(range(0, patches, self.batchsize)):
-                X_batch = X_dataset[i: i + self.batchsize]
+                X_batch = X_dataset[i : i + self.batchsize]
                 X_batch = torch.from_numpy(X_batch).to(self.device)
 
                 mask = self.model.predict_mask(torch.abs(X_batch))
@@ -70,7 +66,7 @@ class Separator(object):
     def separate(self, X_spec):
         n_frame = X_spec.shape[2]
         pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.cropsize, self.offset)
-        X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode="constant")
         X_spec_pad /= np.abs(X_spec).max()
 
         mask = self._separate(X_spec_pad, roi_size)
@@ -83,76 +79,78 @@ class Separator(object):
     def separate_tta(self, X_spec):
         n_frame = X_spec.shape[2]
         pad_l, pad_r, roi_size = dataset.make_padding(n_frame, self.cropsize, self.offset)
-        X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode="constant")
         X_spec_pad /= X_spec_pad.max()
 
         mask = self._separate(X_spec_pad, roi_size)
 
         pad_l += roi_size // 2
         pad_r += roi_size // 2
-        X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode='constant')
+        X_spec_pad = np.pad(X_spec, ((0, 0), (0, 0), (pad_l, pad_r)), mode="constant")
         X_spec_pad /= X_spec_pad.max()
 
         mask_tta = self._separate(X_spec_pad, roi_size)
-        mask_tta = mask_tta[:, :, roi_size // 2:]
+        mask_tta = mask_tta[:, :, roi_size // 2 :]
         mask = (mask[:, :, :n_frame] + mask_tta[:, :, :n_frame]) * 0.5
 
         y_spec, v_spec = self._postprocess(X_spec, mask)
 
         return y_spec, v_spec
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
-DEFAULT_MODEL_PATH = os.path.join(MODEL_DIR, 'baseline.pth')
+
+MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+DEFAULT_MODEL_PATH = os.path.join(MODEL_DIR, "baseline.pth")
+
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--gpu', '-g', type=int, default=-1)
-    p.add_argument('--pretrained_model', '-P', type=str, default=DEFAULT_MODEL_PATH)
-    p.add_argument('--input', '-i', required=True)
-    p.add_argument('--sr', '-r', type=int, default=44100)
-    p.add_argument('--n_fft', '-f', type=int, default=2048)
-    p.add_argument('--hop_length', '-H', type=int, default=1024)
-    p.add_argument('--batchsize', '-B', type=int, default=4)
-    p.add_argument('--cropsize', '-c', type=int, default=256)
-    p.add_argument('--output_image', '-I', action='store_true')
-    p.add_argument('--tta', '-t', action='store_true')
-    p.add_argument('--postprocess', '-p', action='store_true')
-    p.add_argument('--output_dir', '-o', type=str, default="")
+    p.add_argument("--gpu", "-g", type=int, default=-1)
+    p.add_argument("--pretrained_model", "-P", type=str, default=DEFAULT_MODEL_PATH)
+    p.add_argument("--input", "-i", required=True)
+    p.add_argument("--sr", "-r", type=int, default=44100)
+    p.add_argument("--n_fft", "-f", type=int, default=2048)
+    p.add_argument("--hop_length", "-H", type=int, default=1024)
+    p.add_argument("--batchsize", "-B", type=int, default=4)
+    p.add_argument("--cropsize", "-c", type=int, default=256)
+    p.add_argument("--output_image", "-I", action="store_true")
+    p.add_argument("--tta", "-t", action="store_true")
+    p.add_argument("--postprocess", "-p", action="store_true")
+    p.add_argument("--output_dir", "-o", type=str, default="")
     args = p.parse_args()
 
-    print('loading model...', end=' ')
-    device = torch.device('cpu')
+    print("loading model...", end=" ")
+    device = torch.device("cpu")
     if args.gpu >= 0:
         if torch.cuda.is_available():
-            device = torch.device('cuda:{}'.format(args.gpu))
+            device = torch.device(f"cuda:{args.gpu}")
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            device = torch.device('mps')
+            device = torch.device("mps")
     model = nets.CascadedNet(args.n_fft, args.hop_length, 32, 128)
-    model.load_state_dict(torch.load(args.pretrained_model, map_location='cpu'))
+    model.load_state_dict(torch.load(args.pretrained_model, map_location="cpu"))
     model.to(device)
-    print('done')
+    print("done")
 
-    print('loading wave source...', end=' ')
+    print("loading wave source...", end=" ")
     X, sr = librosa.load(
-        args.input, sr=args.sr, mono=False, dtype=np.float32, res_type='kaiser_fast'
+        args.input, sr=args.sr, mono=False, dtype=np.float32, res_type="kaiser_fast"
     )
     basename = os.path.splitext(os.path.basename(args.input))[0]
-    print('done')
+    print("done")
 
     if X.ndim == 1:
         # mono to stereo
         X = np.asarray([X, X])
 
-    print('stft of wave source...', end=' ')
+    print("stft of wave source...", end=" ")
     X_spec = spec_utils.wave_to_spectrogram(X, args.hop_length, args.n_fft)
-    print('done')
+    print("done")
 
     sp = Separator(
         model=model,
         device=device,
         batchsize=args.batchsize,
         cropsize=args.cropsize,
-        postprocess=args.postprocess
+        postprocess=args.postprocess,
     )
 
     if args.tta:
@@ -160,30 +158,30 @@ def main():
     else:
         y_spec, v_spec = sp.separate(X_spec)
 
-    print('validating output directory...', end=' ')
+    print("validating output directory...", end=" ")
     output_dir = args.output_dir
     if output_dir != "":  # modifies output_dir if theres an arg specified
-        output_dir = output_dir.rstrip('/') + '/'
+        output_dir = output_dir.rstrip("/") + "/"
         os.makedirs(output_dir, exist_ok=True)
-    print('done')
+    print("done")
 
-    print('inverse stft of instruments...', end=' ')
+    print("inverse stft of instruments...", end=" ")
     wave = spec_utils.spectrogram_to_wave(y_spec, hop_length=args.hop_length)
-    print('done')
-    sf.write('{}{}_Instruments.wav'.format(output_dir, basename), wave.T, sr)
+    print("done")
+    sf.write(f"{output_dir}{basename}_Instruments.wav", wave.T, sr)
 
-    print('inverse stft of vocals...', end=' ')
+    print("inverse stft of vocals...", end=" ")
     wave = spec_utils.spectrogram_to_wave(v_spec, hop_length=args.hop_length)
-    print('done')
-    sf.write('{}{}_Vocals.wav'.format(output_dir, basename), wave.T, sr)
+    print("done")
+    sf.write(f"{output_dir}{basename}_Vocals.wav", wave.T, sr)
 
     if args.output_image:
         image = spec_utils.spectrogram_to_image(y_spec)
-        utils.imwrite('{}{}_Instruments.jpg'.format(output_dir, basename), image)
+        utils.imwrite(f"{output_dir}{basename}_Instruments.jpg", image)
 
         image = spec_utils.spectrogram_to_image(v_spec)
-        utils.imwrite('{}{}_Vocals.jpg'.format(output_dir, basename), image)
+        utils.imwrite(f"{output_dir}{basename}_Vocals.jpg", image)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
