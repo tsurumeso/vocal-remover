@@ -15,5 +15,6 @@
 *.flac
 
 *~
+.ruff-check/
 .vscode/
-venv/
+.venv/

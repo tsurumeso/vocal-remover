@@ -1,9 +1,10 @@
 # install from https://pytorch.org/get-started/locally/
-# torch~=2.1.0
-# torchvision~=0.16.0
+# torch==2.14.0
+# torchvision==0.29.0
 librosa~=0.10.0
 matplotlib~=3.8.0
-opencv_python~=4.8.0
+opencv_python~=5.0.0
 resampy~=0.4.0
+ruff~=0.16.6
 tqdm~=4.66.0
-numpy~=1.26.4
+numpy~=2.2.6
