@@ -226,7 +226,6 @@ def main():
         patience=args.lr_decay_patience,
         threshold=1e-6,
         min_lr=args.lr_min,
-        verbose=True,
     )
 
     training_set = dataset.make_training_set(
